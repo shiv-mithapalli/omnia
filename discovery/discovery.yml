@@ -76,7 +76,7 @@
               - ""
               - "Supported discovery mechanisms:"
               - "  - ome      : Dell OpenManage Enterprise (OME)"
-              - "  - magellan : Magellan (upcoming, not yet supported)"
+              - "  - magellan : Magellan discovery using admin inventory"
               - ""
               - "Examples:"
               - "  ansible-playbook discovery.yml -e discovery_mechanism=ome"
@@ -89,23 +89,24 @@
           Invalid discovery_mechanism '{{ discovery_mechanism }}' specified.
           Supported mechanisms are: {{ supported_mechanisms | join(', ') }}.
           Usage: ansible-playbook discovery.yml -e discovery_mechanism=ome
+                 ansible-playbook discovery.yml -e discovery_mechanism=magellan
       when: discovery_mechanism not in supported_mechanisms
 
   tasks:
     - name: Handle Magellan discovery mechanism
       when: discovery_mechanism == 'magellan'
       block:
-        - name: Display Magellan not supported message
-          ansible.builtin.debug:
-            msg:
-              - "============================================================"
-              - "NOTICE: Magellan Discovery"
-              - "============================================================"
-              - "This is an upcoming functionality and is not yet supported."
-              - "Please use 'ome' as the discovery_mechanism for now."
-              - "============================================================"
-        - name: End play for magellan
-          ansible.builtin.meta: end_play
+        - name: Fail when admin_inventory_path is not configured
+          ansible.builtin.fail:
+            msg: >-
+              admin_inventory_path must be provided in discovery_config.yml when using
+              Magellan discovery. Please set a valid 'admin_inventory_path' in
+              {{ input_project_dir }}/discovery_config.yml.
+          when: admin_inventory_path | default('') | length == 0
+
+        - name: Include magellan discovery role
+          ansible.builtin.include_role:
+            name: magellan_discovery
 
     - name: Validate OME inputs before discovery
       when: discovery_mechanism == 'ome'

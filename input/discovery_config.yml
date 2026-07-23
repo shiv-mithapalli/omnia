@@ -31,4 +31,8 @@ enable_bmc_discovery: false
 ome_ip: ""
 
 #### Magellan Discovery
-# Reserved for future Magellan discovery configuration parameters.
+# Path to the admin inventory CSV file used by Magellan discovery.
+# This CSV is consumed by the idrac_discovery.py script to generate
+# pxe_mapping_file_<timestamp>.csv and xnames_<timestamp>.csv.
+# Example: "/opt/omnia/input/project_default/admin_inventory.csv"
+admin_inventory_path: "/opt/omnia/input/project_default/admin_inventory.csv"
