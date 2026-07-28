@@ -22,8 +22,8 @@
 - name: Generate PXE mapping file
   ansible.builtin.include_tasks: generate_pxe_mapping.yml
 
-# here this code
-# collect location info and generate the xnames.csv
+- name: Generate xnames mapping file
+  ansible.builtin.include_tasks: generate_xnames_mapping.yml
 
 - name: Generate BMC discovery report
   ansible.builtin.include_tasks: generate_discovery_report.yml

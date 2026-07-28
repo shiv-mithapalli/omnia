@@ -15,3 +15,18 @@
 
 # Path to admin inventory CSV consumed by the Magellan discovery mechanism.
 admin_inventory_path: "{{ hostvars['localhost']['input_project_dir'] | default('/opt/omnia/input/project_default') }}/admin_inventory.csv"
+
+# Default functional group name for discovered nodes (used when not provided in admin_inventory.csv)
+default_functional_group: "slurm_node_aarch64"
+
+# Default group name (used when not provided in admin_inventory.csv)
+default_group_name: "grp0"
+
+# Hostname prefix for discovered nodes
+hostname_prefix: "nid"
+
+# Starting hostname number
+hostname_start_number: 1
+
+# Hostname padding (e.g., 5 digits = nid00001)
+hostname_padding: 5

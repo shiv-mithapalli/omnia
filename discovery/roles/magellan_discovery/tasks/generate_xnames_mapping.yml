@@ -13,20 +13,12 @@
 # limitations under the License.
 ---
 
-- name: Include iDRAC credential handling
-  ansible.builtin.include_tasks: get_idrac_credentials.yml
+- name: Set timestamped xnames mapping file path
+  ansible.builtin.set_fact:
+    xnames_mapping_file: "{{ pxe_mapping_output_file | dirname }}/xnames_mapping_file_{{ pxe_mapping_timestamp }}.csv"
 
-- name: Validate admin inventory CSV
-  ansible.builtin.include_tasks: validate_admin_inventory.yml
-
-- name: Collect server inventory from iDRACs
-  ansible.builtin.include_tasks: collect_inventory.yml
-
-- name: Generate PXE mapping file
-  ansible.builtin.include_tasks: generate_pxe_mapping.yml
-
-- name: Generate xnames mapping file
-  ansible.builtin.include_tasks: generate_xnames_mapping.yml
-
-- name: Generate BMC discovery report
-  ansible.builtin.include_tasks: generate_discovery_report.yml
+- name: Generate xnames mapping file from location data
+  generate_xnames_mapping:
+    servers: "{{ discovered_servers }}"
+    output_file: "{{ xnames_mapping_file }}"
+  register: xnames_result

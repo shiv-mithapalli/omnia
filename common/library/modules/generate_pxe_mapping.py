@@ -20,6 +20,11 @@ import os
 import re
 from ansible.module_utils.basic import AnsibleModule
 
+# Regex for a valid GROUP_NAME in the PXE mapping (grp0-grp100 or SU[A-Z]?1-100).
+GROUP_NAME_RE = re.compile(
+    r"^(?:grp(?:[0-9]|[1-9][0-9]|100)|[Ss][Uu][A-Za-z]?(?:0*[1-9][0-9]?|100))$"
+)
+
 DOCUMENTATION = r'''
 ---
 module: generate_pxe_mapping
@@ -249,27 +254,42 @@ def main():
             admin_ip = calculate_admin_ip(admin_subnet, bmc_ip)
             ib_ip = calculate_ib_ip(ib_subnet, bmc_ip) if ib_nic_name else ""
 
-            # Use group_name from OME if available, else fall back to module param default
-            server_group = server.get('group_name', '').strip()
+            # Per-server optional values from inventory (Magellan) vs OME group (OME).
+            # If the inventory source provides both, functional_group takes precedence for
+            # FUNCTIONAL_GROUP_NAME and group_name for GROUP_NAME.
+            server_functional_group = server.get('functional_group', '').strip()
+            server_group_name = server.get('group_name', '').strip()
 
-            # Skip servers whose OME group is not a supported Omnia functional group
-            if server_group and server_group not in SUPPORTED_FUNCTIONAL_GROUPS:
+            # OME stores the static/functional group in 'group_name'. If a per-server
+            # functional_group is absent and group_name is not a valid GROUP_NAME,
+            # treat group_name as the functional group for backward compatibility.
+            if not server_functional_group and not GROUP_NAME_RE.match(server_group_name):
+                server_functional_group = server_group_name
+
+            # Resolve the functional group: per-server value wins, then module default.
+            resolved_functional_group = server_functional_group if server_functional_group else functional_group
+
+            # Validate the functional group that will actually be written.
+            if resolved_functional_group not in SUPPORTED_FUNCTIONAL_GROUPS:
                 svc_tag = server.get('service_tag', 'unknown')
                 module.warn(
-                    f"Skipping device {svc_tag}: OME static group '{server_group}' "
+                    f"Skipping device {svc_tag}: functional group '{resolved_functional_group}' "
                     f"is not a supported Omnia functional group. "
                     f"Supported groups: {', '.join(sorted(SUPPORTED_FUNCTIONAL_GROUPS))}"
                 )
                 continue
 
-            resolved_functional_group = server_group if server_group else functional_group
-
-            # Derive GROUP_NAME: try SU from BMC hostname first,
-            # then from OME group name, then fall back to module default (grp0)
-            su_name = extract_su_from_hostname(bmc_hostname)
-            if not su_name:
-                su_name = extract_su_from_hostname(server_group)
-            resolved_group_name = su_name if su_name else group_name
+            # Derive GROUP_NAME. Prefer an explicit per-server group_name that matches
+            # the valid GROUP_NAME format, then extract an SU from the BMC hostname,
+            # then from the per-server functional group string, then fall back to the
+            # module-level group_name default.
+            if server_group_name and GROUP_NAME_RE.match(server_group_name):
+                resolved_group_name = server_group_name
+            else:
+                su_name = extract_su_from_hostname(bmc_hostname)
+                if not su_name:
+                    su_name = extract_su_from_hostname(server_functional_group)
+                resolved_group_name = su_name if su_name else group_name
 
             row = {
                 "FUNCTIONAL_GROUP_NAME": resolved_functional_group,

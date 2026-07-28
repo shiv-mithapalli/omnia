@@ -21,70 +21,76 @@ from ansible.module_utils.basic import AnsibleModule
 
 def generate_xname_in_mapping_file(mapping_file_path, module):
     """
-    Generates xname in mapping file:
+    Generates xname in pxe mapping file:
     Parameters:
-        mapping_file_path (str): The path to the mapping file.
+        mapping_file_path (str): The path to the pxe mapping file.
         module (AnsibleModule): The Ansible module instance for handling exit and failure.
     """
     try:
         csv_file = pd.read_csv(mapping_file_path)
         if len(csv_file) == 0:
-            module.fail_json(msg="Please provide details in mapping file.")
+            module.fail_json(msg="Please provide details in pxe mapping file.")
 
         # Strip whitespace from column values and names
         csv_file = csv_file.apply(lambda x: x.str.strip() if x.dtype == 'object' else x)
- 
-        # Derive the path to xnames.csv from the same directory as the mapping file.
-        # idrac_discover.py is responsible for generating this file before provision.yml runs.
-        xnames_file_path = os.path.join(os.path.dirname(mapping_file_path), "xnames.csv")
 
-        # Fallback xname generation if xnames.csv is not present.
+        # Derive the path to xnames_mapping_file.csv from the same directory as the pxe mapping file.
+        # Discovery roles are responsible for generating this file before provision.yml runs.
+        xnames_file_path = os.path.join(os.path.dirname(mapping_file_path), "xnames_mapping_file.csv")
+
+        # Fallback xname generation if xname_mapping_file.csv is not present.
         if not os.path.exists(xnames_file_path):
             xname_values = []
+            max_fallback = 9000 * 8 * 256  # 18,432,000 unique xnames
+            if len(csv_file) > max_fallback:
+                module.fail_json(
+                    msg=f"Cannot generate fallback xnames for more than {max_fallback} entries."
+                )
+                
             for i in range(len(csv_file)):
-                # `c` will be based on i // 100 (every 100 entries we increment `c`)
-                c_index = i // 100
-                # `s` will be based on i // 10 (every 10 entries we increment `s`)
-                s_index = (i // 10) % 10
-                # `digit` cycles from 0 to 9
-                digit = i % 10
-                # Build the 'xname' with updated logic for `c` and `s` indices
-                xname = f'x1000c{c_index}s{s_index}b{digit}n0'
+                # Encode index into cabinet/chassis/slot while keeping b=0 and n=0
+                # This satisfies:
+                #   - hms-xname: cabinet 1-4 digits, chassis 0-7
+                #   - csm:       cabinet <=100000, chassis/slot/bmc <256
+                cabinet = 1000 + (i // (8 * 256))
+                chassis = (i // 256) % 8
+                slot = i % 256
+                xname = f'x{cabinet}c{chassis}s{slot}b0n0'
                 xname_values.append(xname)
-
+        
             csv_file["XNAME"] = xname_values
             csv_file.to_csv(mapping_file_path, index=False)
-            module.exit_json(changed=True, msg="Xnames are generated successfully in the mapping file using fallback logic.")
+            module.exit_json(changed=True, msg="Xnames are generated successfully in the pxe mapping file using fallback logic.")
 
-        # Load xnames.csv and trim whitespace so IP-based lookups are reliable.
+        # Load xname_mapping_file.csv and trim whitespace so IP-based lookups are reliable.
         xnames_csv = pd.read_csv(xnames_file_path)
         xnames_csv = xnames_csv.apply(lambda x: x.str.strip() if x.dtype == 'object' else x)
 
         # Validate the expected columns are present before attempting lookups.
         if "BMC_IP" not in xnames_csv.columns or "XNAME" not in xnames_csv.columns:
             module.fail_json(
-                msg=f"xnames.csv at {xnames_file_path} must contain BMC_IP and XNAME columns."
+                msg=f"xname_mapping_file.csv at {xnames_file_path} must contain BMC_IP and XNAME columns."
             )
 
         # Build a lookup table: each configured BMC IP maps to its physical-location xname.
         xname_map = dict(zip(xnames_csv["BMC_IP"], xnames_csv["XNAME"]))
 
-        # Compare the sets of BMC IPs between the mapping file and xnames.csv.
+        # Compare the sets of BMC IPs between the pxe mapping file and xname_mapping_file.csv.
         # Perfect one-to-one correspondence is required to avoid mismatched hardware metadata.
-        mapping_bmc_ips = set(csv_file["BMC_IP"])
+        pxe_bmc_ips = set(csv_file["BMC_IP"])
         xnames_bmc_ips = set(xname_map.keys())
 
-        missing_in_xnames = mapping_bmc_ips - xnames_bmc_ips
+        missing_in_xnames = pxe_bmc_ips - xnames_bmc_ips
         if missing_in_xnames:
             module.fail_json(
-                msg="The following BMC_IPs from the mapping file were not found in xnames.csv: "
+                msg="The following BMC_IPs from the pxe mapping file were not found in xname mapping file: "
                     f"{', '.join(sorted(missing_in_xnames))}"
             )
 
-        extra_in_xnames = xnames_bmc_ips - mapping_bmc_ips
+        extra_in_xnames = xnames_bmc_ips - pxe_bmc_ips
         if extra_in_xnames:
             module.fail_json(
-                msg="The following BMC_IPs in xnames.csv were not found in the mapping file: "
+                msg="The following BMC_IPs in xname mapping file were not found in the pxe mapping file: "
                     f"{', '.join(sorted(extra_in_xnames))}"
             )
 
@@ -96,25 +102,25 @@ def generate_xname_in_mapping_file(mapping_file_path, module):
         dup_xnames = csv_file[csv_file["XNAME"].duplicated(keep=False)]["XNAME"].unique().tolist()
         if dup_xnames:
             module.fail_json(
-                msg="Duplicate XNAME values found in the mapping file: "
+                msg="Duplicate XNAME values found in the pxe mapping file: "
                     f"{', '.join(sorted(dup_xnames))}"
             )
 
-        # Persist the enriched mapping file back to disk.
+        # Persist the enriched pxe mapping file back to disk.
         csv_file.to_csv(mapping_file_path, index=False)
 
         # If all checks pass
-        module.exit_json(changed=True, msg="Xnames are generated successfully in the mapping file.")
+        module.exit_json(changed=True, msg="Xnames are generated successfully in the pxe mapping file.")
 
     except Exception as e:
         module.fail_json(msg=str(e))
 
 def main():
     """
-	Validate a mapping file.
+	Validate a pxe mapping file.
 
 	Parameters:
-		mapping_file_path (str): The path to the mapping file.
+		mapping_file_path (str): The path to the pxe mapping file.
 
 	"""
     module_args = {

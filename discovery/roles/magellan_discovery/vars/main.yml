@@ -13,4 +13,21 @@
 # limitations under the License.
 ---
 
-magellan_output_dir: "/opt/omnia/input/project_default"
+# Credential file paths (shared with OME discovery)
+omnia_config_credentials_file: "{{ input_project_dir | default(playbook_dir + '/../input') }}/omnia_config_credentials.yml"
+omnia_config_credentials_vault_key: "{{ input_project_dir | default(playbook_dir + '/../input') }}/.omnia_config_credentials_key"
+
+# Output paths
+pxe_mapping_output_file: "{{ input_project_dir | default(playbook_dir + '/../input') }}/bmc_pxe_mapping_file.csv"
+xnames_mapping_file: "{{ input_project_dir | default(playbook_dir + '/../input') }}/xnames_mapping_file.csv"
+discovery_report_dir: "/opt/omnia/discovery"
+
+# Messages
+admin_inventory_not_found_msg: |
+  Admin inventory file not found at {{ admin_inventory_path }}.
+  Please create the file with columns: BMC_IP, ROW, RACK, USLOT
+  Optional columns: FUNCTIONAL_GROUP_NAME, GROUP_NAME
+
+no_servers_found_msg: |
+  No servers could be discovered from the admin inventory.
+  Please verify that the iDRAC IPs, credentials, and network connectivity are correct.

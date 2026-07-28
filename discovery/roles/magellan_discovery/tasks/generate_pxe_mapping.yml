@@ -13,20 +13,43 @@
 # limitations under the License.
 ---
 
+- name: Load network spec
+  ansible.builtin.include_vars:
+    file: "{{ input_project_dir }}/network_spec.yml"
+    name: network_spec_data
+
+- name: Set admin and IB subnets from network spec
+  ansible.builtin.set_fact:
+    admin_subnet: "{{ (network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.subnet | default('') }}"
+    ib_subnet: "{{ (network_spec_data.Networks | selectattr('ib_network', 'defined') | first).ib_network.subnet | default('') }}"
+
+- name: Set timestamp for PXE mapping file
+  ansible.builtin.set_fact:
+    pxe_mapping_timestamp: "{{ ansible_date_time.iso8601_basic_short | default(lookup('pipe', 'date +%Y%m%dT%H%M%S')) }}"
+
+- name: Set timestamped PXE mapping output file path
+  ansible.builtin.set_fact:
+    pxe_mapping_output_file: "{{ input_project_dir }}/bmc_pxe_mapping_file_{{ pxe_mapping_timestamp }}.csv"
+
 - name: Ensure output directory exists
   ansible.builtin.file:
-    path: "{{ magellan_output_dir }}"
+    path: "{{ pxe_mapping_output_file | dirname }}"
     state: directory
     mode: '0755'
 
-- name: Generate PXE mapping and xnames files
-  ansible.builtin.command: >-
-    python3 {{ playbook_dir }}/../utils/idrac_discovery.py
-    --inventory {{ admin_inventory_path }}
-    --output-dir {{ magellan_output_dir }}
-  register: magellan_discovery_result
-  changed_when: true
+- name: Generate PXE mapping file
+  generate_pxe_mapping:
+    servers: "{{ discovered_servers }}"
+    output_file: "{{ pxe_mapping_output_file }}"
+    functional_group: "{{ default_functional_group }}"
+    group_name: "{{ default_group_name }}"
+    hostname_prefix: "{{ hostname_prefix }}"
+    hostname_start: "{{ hostname_start_number }}"
+    hostname_padding: "{{ hostname_padding }}"
+    ib_subnet: "{{ ib_subnet }}"
+    admin_subnet: "{{ admin_subnet }}"
+  register: pxe_mapping_result
 
-- name: Display magellan discovery results
+- name: Display PXE mapping result
   ansible.builtin.debug:
-    msg: "{{ magellan_discovery_result.stdout_lines }}"
+    msg: "Generated PXE mapping file at {{ pxe_mapping_result.file_path }} with {{ pxe_mapping_result.server_count }} servers"

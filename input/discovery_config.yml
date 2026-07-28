@@ -32,7 +32,10 @@ ome_ip: ""
 
 #### Magellan Discovery
 # Path to the admin inventory CSV file used by Magellan discovery.
-# This CSV is consumed by the idrac_discovery.py script to generate
-# pxe_mapping_file_<timestamp>.csv and xnames_<timestamp>.csv.
+# This CSV is consumed by the magellan_discovery role to generate
+# bmc_pxe_mapping_file_<timestamp>.csv and xnames_mapping_file.csv.
+# The admin inventory must contain at least the columns:
+#   BMC_IP, ROW, RACK, USLOT
+# Optional columns: FUNCTIONAL_GROUP_NAME, GROUP_NAME
 # Example: "/opt/omnia/input/project_default/admin_inventory.csv"
 admin_inventory_path: "/opt/omnia/input/project_default/admin_inventory.csv"
