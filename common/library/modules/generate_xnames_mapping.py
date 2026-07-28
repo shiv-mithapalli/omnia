@@ -27,8 +27,8 @@ short_description: Generate xnames mapping CSV from server location data
 description:
     - This module generates an xnames mapping CSV file from server location
       data (Row, Rack, U-slot) and the BMC IP for each server.
-    - The generated xname follows the format x{row}c0s{slot}b0n0 where
-      slot = rack * 100 + uslot.
+    - The generated xname follows the format x{1000+row}c{rack%8}s{rack//8}b{uslot}n0.
+      Each component is constrained to pass both CSM and hms-xname validation.
 options:
     servers:
         description: List of server dictionaries with idrac_ip or BMC_IP, and row/rack/uslot (case-insensitive; rackslot may be used in place of uslot)
@@ -76,8 +76,39 @@ def _get_value(server, *keys):
 def construct_xname(row, rack, uslot):
     """Construct an xname from physical location fields.
 
-    The rack and U-slot are encoded into a single slot value as
-    ``rack * 100 + uslot``.
+    The xname format is x{cabinet}c{chassis}s{slot}b{bmc}n{node}. We map these fields
+    to our location fields as follows:
+      - cabinet = 1000 + row
+      - chassis = rack % 8
+      - slot    = rack // 8
+      - bmc     = uslot
+      - node    = 0
+
+    Example:
+      row=1, rack=400, uslot=99
+      cabinet = 1000 + 1  = 1001
+      chassis = 400 % 8   = 0
+      slot    = 400 // 8  = 50
+      bmc     = 99
+      xname   = x1001c0s50b99n0
+
+      row=1, rack=1, uslot=1
+      cabinet = 1000 + 1  = 1001
+      chassis = 1 % 8     = 1
+      slot    = 1 // 8    = 0
+      bmc     = 1
+      xname   = x1001c1s0b1n0
+
+
+    To extract the original values:
+      row   = cabinet - 1000
+      rack  = chassis + (8 * slot)
+      uslot = bmc
+
+    Valid ranges:
+      - row:   0 - 8999   (cabinet becomes 1000 - 9999, 3-4 digits)
+      - rack:  0 - 2047   (chassis 0-7, slot 0-255)
+      - uslot: 0 - 255     (bmc 0-255)
     """
     try:
         row = int(row)
@@ -88,15 +119,17 @@ def construct_xname(row, rack, uslot):
             f"row, rack, and uslot must be integers, got row={row}, rack={rack}, uslot={uslot}"
         ) from exc
 
-    if not isinstance(row, int) or not 0 <= row <= 9999:
-        raise ValueError(f"row must be an integer between 0 and 9999, got {row}")
-    if not isinstance(rack, int) or rack < 0:
-        raise ValueError(f"rack must be a non-negative integer, got {rack}")
-    if not isinstance(uslot, int) or not 0 <= uslot <= 99:
+    if not 0 <= row <= 8999:
+        raise ValueError(f"row must be an integer between 0 and 8999, got {row}")
+    if not 0 <= rack <= 2047:
+        raise ValueError(f"rack must be an integer between 0 and 2047, got {rack}")
+    if not 0 <= uslot <= 99:
         raise ValueError(f"uslot must be an integer between 0 and 99, got {uslot}")
 
-    slot = rack * 100 + uslot
-    return f"x{row}c0s{slot}b0n0"
+    cabinet = 1000 + row
+    chassis = rack % 8
+    slot = rack // 8
+    return f"x{cabinet}c{chassis}s{slot}b{uslot}n0"
 
 
 def normalize_bmc_ip(ip_str):
