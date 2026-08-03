@@ -123,8 +123,8 @@ def construct_xname(row, rack, uslot):
         raise ValueError(f"row must be an integer between 0 and 8999, got {row}")
     if not 0 <= rack <= 2047:
         raise ValueError(f"rack must be an integer between 0 and 2047, got {rack}")
-    if not 0 <= uslot <= 99:
-        raise ValueError(f"uslot must be an integer between 0 and 99, got {uslot}")
+    if not 0 <= uslot <= 255:
+        raise ValueError(f"uslot must be an integer between 0 and 255, got {uslot}")
 
     cabinet = 1000 + row
     chassis = rack % 8

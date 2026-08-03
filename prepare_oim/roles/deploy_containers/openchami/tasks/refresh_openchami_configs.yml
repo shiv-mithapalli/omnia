@@ -60,9 +60,52 @@
     coredhcp_router: "{{ network_data.admin_network.router }}"
     coredhcp_lease_duration: "{{ default_lease_time }}s"
 
-- name: Set multi-subnet coredhcp facts
+- name: Set BMC network facts for refresh
   ansible.builtin.set_fact:
-    additional_subnets: "{{ network_data.admin_network.additional_subnets | default([]) }}"
+    bmc_details_status: >-
+      {{
+        network_data.bmc_network | default({}) |
+        dict2items |
+        selectattr('key', 'in', ['oim_nic_name', 'subnet', 'netmask_bits', 'router', 'dynamic_range']) |
+        map(attribute='value') | reject('equalto', '') | list | length == 5
+      }}
+    bmc_nic: "{{ network_data.bmc_network.oim_nic_name | default('', true) }}"
+    bmc_subnet: "{{ network_data.bmc_network.subnet | default('', true) }}"
+    bmc_netmask_bits: "{{ network_data.bmc_network.netmask_bits | default('', true) }}"
+    bmc_router: "{{ network_data.bmc_network.router | default('', true) }}"
+    bmc_dynamic_range: "{{ network_data.bmc_network.dynamic_range | default('', true) }}"
+    bmc_additional_subnets: "{{ network_data.bmc_network.additional_subnets | default([]) }}"
+
+- name: Build combined coredhcp subnet and listen interface facts
+  ansible.builtin.set_fact:
+    coredhcp_subnets: >-
+      {{
+        [{
+          'subnet': network_data.admin_network.subnet,
+          'netmask_bits': network_data.admin_network.netmask_bits,
+          'router': network_data.admin_network.router,
+          'dynamic_range': network_data.admin_network.dynamic_range
+        }]
+        + network_data.admin_network.additional_subnets | default([])
+        + (bmc_details_status | bool | ternary(
+            [{
+              'subnet': bmc_network.subnet | default(''),
+              'netmask_bits': bmc_network.netmask_bits | default(''),
+              'router': bmc_network.router | default(''),
+              'dynamic_range': bmc_network.dynamic_range | default('')
+            }], []
+          ))
+        + (bmc_details_status | bool | ternary(
+            bmc_network.additional_subnets | default([]), []
+          ))
+      }}
+    coredhcp_listen_interfaces: >-
+      {{
+        [admin_nic]
+        + (bmc_details_status | bool | ternary([bmc_nic], []))
+      }}
+  vars:
+    bmc_network: "{{ network_data.bmc_network | default({}) }}"
 
 - name: Override DNS forwarders from network_spec if configured
   ansible.builtin.set_fact:
@@ -93,3 +136,6 @@
     state: restarted
     daemon_reload: true
   when: coredhcp_config_result.changed or coredns_config_result.changed
+
+- name: Configure and refresh iDRAC watcher
+  ansible.builtin.include_tasks: idrac_watcher.yml

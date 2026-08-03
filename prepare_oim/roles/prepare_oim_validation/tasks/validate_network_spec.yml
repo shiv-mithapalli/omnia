@@ -98,5 +98,44 @@
     bmc_details_status: true
   when:
     - network_data.bmc_network.oim_nic_name | default("", true) | length > 0
+    - network_data.bmc_network.subnet | default("", true) | length > 0
     - network_data.bmc_network.netmask_bits | default("", true) | length > 0
+    - network_data.bmc_network.router | default("", true) | length > 0
     - network_data.bmc_network.dynamic_range | default("", true) | length > 0
+
+- name: Set BMC network facts
+  ansible.builtin.set_fact:
+    bmc_nic: "{{ network_data.bmc_network.oim_nic_name }}"
+    bmc_subnet: "{{ network_data.bmc_network.subnet }}"
+    bmc_netmask_bits: "{{ network_data.bmc_network.netmask_bits }}"
+    bmc_router: "{{ network_data.bmc_network.router }}"
+    bmc_dynamic_range: "{{ network_data.bmc_network.dynamic_range }}"
+    bmc_additional_subnets: "{{ network_data.bmc_network.additional_subnets | default([]) }}"
+  when: bmc_details_status | bool
+
+- name: Ensure BMC NIC exists on the system
+  ansible.builtin.assert:
+    that:
+      - bmc_nic in ansible_facts.interfaces
+    fail_msg: "BMC NIC {{ bmc_nic }} is not present on this system"
+    success_msg: "BMC NIC {{ bmc_nic }} is present on this system"
+  when: bmc_details_status | bool
+
+- name: Compute BMC and admin CIDR facts
+  ansible.builtin.set_fact:
+    bmc_cidr: "{{ bmc_subnet }}/{{ bmc_netmask_bits }}"
+    admin_cidr: "{{ network_data.admin_network.subnet }}/{{ network_data.admin_network.netmask_bits }}"
+  when: bmc_details_status | bool
+
+- name: Validate BMC network values
+  ansible.builtin.assert:
+    that:
+      - bmc_dynamic_range | split('-') | length == 2
+      - bmc_router | ansible.utils.ipaddr(bmc_cidr)
+      - bmc_dynamic_range | split('-') | first | ansible.utils.ipaddr(bmc_cidr)
+      - bmc_dynamic_range | split('-') | last | ansible.utils.ipaddr(bmc_cidr)
+      - (bmc_dynamic_range | split('-') | first | ansible.utils.ipaddr('int')) < (bmc_dynamic_range | split('-') | last | ansible.utils.ipaddr('int'))
+      - not (bmc_cidr | ansible.utils.ipaddr(admin_cidr) or admin_cidr | ansible.utils.ipaddr(bmc_cidr))
+    fail_msg: "BMC network {{ bmc_cidr }} (router {{ bmc_router }}, range {{ bmc_dynamic_range }}) is invalid or overlaps with admin network {{ admin_cidr }}"
+    success_msg: "BMC network {{ bmc_cidr }} is valid"
+  when: bmc_details_status | bool

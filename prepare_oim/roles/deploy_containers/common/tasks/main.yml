@@ -39,6 +39,13 @@
     admin_nic_ip: "{{ hostvars['localhost']['admin_nic_ip'] }}"
     admin_net_addr: "{{ hostvars['localhost']['admin_net_addr'] }}"
     admin_netmask_bits: "{{ hostvars['localhost']['admin_netmask_bits'] }}"
+    bmc_details_status: "{{ hostvars['localhost']['bmc_details_status'] | default(false) }}"
+    bmc_nic: "{{ hostvars['localhost']['bmc_nic'] | default('', true) }}"
+    bmc_subnet: "{{ hostvars['localhost']['bmc_subnet'] | default('', true) }}"
+    bmc_netmask_bits: "{{ hostvars['localhost']['bmc_netmask_bits'] | default('', true) }}"
+    bmc_router: "{{ hostvars['localhost']['bmc_router'] | default('', true) }}"
+    bmc_dynamic_range: "{{ hostvars['localhost']['bmc_dynamic_range'] | default('', true) }}"
+    bmc_additional_subnets: "{{ hostvars['localhost']['bmc_additional_subnets'] | default([], true) }}"
     docker_username: "{{ hostvars['localhost']['docker_username'] }}"
     docker_password: "{{ hostvars['localhost']['docker_password'] }}"
   no_log: true

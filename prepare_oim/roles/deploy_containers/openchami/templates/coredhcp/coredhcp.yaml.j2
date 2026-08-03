@@ -1,14 +1,18 @@
 {% set coresmd_ver = openchami_coresmd_tag | regex_replace('^v', '') %}
 {% set multisubnet_native = coresmd_ver is version('0.6.0', '>=') %}
-{% set has_additional_subnets = additional_subnets | default([]) | length > 0 %}
+{% set has_additional_subnets = coredhcp_subnets | default([]) | length > 1 %}
 server4:
   listen:
-    - "%{{ cluster_boot_interface }}"
+{% for iface in coredhcp_listen_interfaces | default([cluster_boot_interface]) %}
+    - "%{{ iface }}"
+{% endfor %}
   plugins:
     - server_id: {{ coredhcp_server_id }}
     - dns: {{ coredhcp_dns_server }}
+{% if not (multisubnet_native and has_additional_subnets) %}
     - router: {{ coredhcp_router }}
     - netmask: {{ coredhcp_netmask }}
+{% endif %}
 {% if multisubnet_native and has_additional_subnets %}
     # Multi-subnet mode: key=value config format (coresmd v0.6.x+)
     - coresmd: |
@@ -18,7 +22,7 @@ server4:
         cache_valid={{ coredhcp_cache_validity }}
         lease_time={{ coredhcp_lease_duration }}
         single_port={{ coredhcp_tftp_single_port_mode | lower }}
-{% for s in additional_subnets %}
+{% for s in coredhcp_subnets | default([]) %}
         rule=subnet:{{ s.subnet }}/{{ s.netmask_bits }},type:Node,routers:{{ s.router }},cidr:{{ s.netmask_bits }}
         rule=subnet:{{ s.subnet }}/{{ s.netmask_bits }},type:NodeBMC,routers:{{ s.router }},cidr:{{ s.netmask_bits }}
 {% endfor %}
@@ -29,7 +33,7 @@ server4:
         lease_file=/tmp/coredhcp.db
         script_path={{ coredhcp_custom_ipxe }}
         lease_time={{ coredhcp_tmp_lease_duration }}
-{% for s in additional_subnets %}
+{% for s in coredhcp_subnets | default([]) %}
 {% set range_parts = s.dynamic_range | split('-') %}
         subnet_pool={{ s.subnet }}/{{ s.netmask_bits }},{{ range_parts[0] }},{{ range_parts[1] }}
 {% endfor %}
@@ -55,7 +59,7 @@ server4:
     #     cache_valid={{ coredhcp_cache_validity }}
     #     lease_time={{ coredhcp_lease_duration }}
     #     single_port={{ coredhcp_tftp_single_port_mode | lower }}
-{% for s in additional_subnets %}
+{% for s in coredhcp_subnets | default([]) %}
     #     rule=subnet:{{ s.subnet }}/{{ s.netmask_bits }},type:Node,routers:{{ s.router }},cidr:{{ s.netmask_bits }}
     #     rule=subnet:{{ s.subnet }}/{{ s.netmask_bits }},type:NodeBMC,routers:{{ s.router }},cidr:{{ s.netmask_bits }}
 {% endfor %}
@@ -66,7 +70,7 @@ server4:
     #     lease_file=/tmp/coredhcp.db
     #     script_path={{ coredhcp_custom_ipxe }}
     #     lease_time={{ coredhcp_tmp_lease_duration }}
-{% for s in additional_subnets %}
+{% for s in coredhcp_subnets | default([]) %}
 {% set range_parts = s.dynamic_range | split('-') %}
     #     subnet_pool={{ s.subnet }}/{{ s.netmask_bits }},{{ range_parts[0] }},{{ range_parts[1] }}
 {% endfor %}

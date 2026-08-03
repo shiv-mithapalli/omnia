@@ -258,7 +258,15 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
     system_data = redfish_get(session, base_url, system_path,
                               auth, verify_ssl, timeout, max_retries).json()
 
-    info["service_tag"] = system_data.get("SKU") or system_data.get("SerialNumber") or ""
+    csv_service_tag = _get_value(admin_server, "SERVICE_TAG") or ""
+    redfish_service_tag = system_data.get("SKU") or system_data.get("SerialNumber") or ""
+    if csv_service_tag and redfish_service_tag:
+        if csv_service_tag.upper() != redfish_service_tag.upper():
+            raise ValueError(
+                f"Service tag mismatch for {bmc_ip}: "
+                f"inventory says {csv_service_tag}, iDRAC reports {redfish_service_tag}"
+            )
+    info["service_tag"] = csv_service_tag or redfish_service_tag
     info["model"] = system_data.get("Model") or ""
     info["idrac_hostname"] = system_data.get("Name") or ""
 

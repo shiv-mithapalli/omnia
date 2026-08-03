@@ -1,0 +1,107 @@
+# Copyright 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+
+- name: Check for iDRAC sparse inventory
+  ansible.builtin.stat:
+    path: "{{ hostvars['localhost']['input_project_dir'] }}/admin_inventory.csv"
+  register: admin_inventory_stat
+
+- name: Skip iDRAC watcher when inventory is not present
+  ansible.builtin.debug:
+    msg: "admin_inventory.csv not found; iDRAC watcher will not be started"
+  when: not admin_inventory_stat.stat.exists | default(false)
+
+- name: Check for iDRAC credentials file
+  ansible.builtin.stat:
+    path: "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
+  register: idrac_cred_file_stat
+  when: admin_inventory_stat.stat.exists | default(false)
+
+- name: Load iDRAC credentials
+  ansible.builtin.include_vars:
+    file: "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
+  no_log: true
+  when:
+    - admin_inventory_stat.stat.exists | default(false)
+    - idrac_cred_file_stat.stat.exists | default(false)
+
+- name: Set iDRAC watcher facts
+  ansible.builtin.set_fact:
+    bmc_username: "{{ bmc_username | default('root', true) }}"
+    bmc_password: "{{ bmc_password | default('calvin', true) }}"
+    admin_inventory_csv: "{{ hostvars['localhost']['input_project_dir'] }}/admin_inventory.csv"
+  no_log: true
+  when: admin_inventory_stat.stat.exists | default(false)
+
+- name: Ensure iDRAC watcher directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "/opt/omnia/openchami"
+    - "/opt/omnia/log/openchami"
+  when: admin_inventory_stat.stat.exists | default(false)
+
+- name: Create CoreDHCP lease DB host file
+  ansible.builtin.file:
+    path: "/opt/omnia/openchami/coredhcp.db"
+    state: touch
+    mode: "0644"
+  when: admin_inventory_stat.stat.exists | default(false)
+
+- name: Mount CoreDHCP lease DB into coresmd-coredhcp container
+  ansible.builtin.lineinfile:
+    path: "/etc/containers/systemd/coresmd-coredhcp.container"
+    regexp: "^Volume=/opt/omnia/openchami/coredhcp.db:/tmp/coredhcp.db"
+    line: "Volume=/opt/omnia/openchami/coredhcp.db:/tmp/coredhcp.db"
+    insertafter: "^\\[Container\\]$"
+    create: false
+  when:
+    - admin_inventory_stat.stat.exists | default(false)
+    - ansible_facts['os_family'] == 'RedHat'
+
+- name: Template iDRAC watcher config
+  ansible.builtin.template:
+    src: idrac_watcher_config.json.j2
+    dest: "/opt/omnia/openchami/idrac_watcher_config.json"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: admin_inventory_stat.stat.exists | default(false)
+
+- name: Template iDRAC watcher systemd unit
+  ansible.builtin.template:
+    src: idrac_watcher.service.j2
+    dest: "/etc/systemd/system/idrac-watcher.service"
+    owner: root
+    group: root
+    mode: "0644"
+  when: admin_inventory_stat.stat.exists | default(false)
+
+- name: Reload systemd and restart CoreDHCP to apply lease volume
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: coresmd-coredhcp.service
+    state: restarted
+  when: admin_inventory_stat.stat.exists | default(false)
+
+- name: Enable and start iDRAC watcher
+  ansible.builtin.systemd:
+    name: idrac-watcher.service
+    enabled: true
+    state: started
+  when: admin_inventory_stat.stat.exists | default(false)

@@ -124,6 +124,37 @@
   ansible.builtin.set_fact:
     additional_subnets: "{{ network_data.admin_network.additional_subnets | default([]) }}"
 
+- name: Build combined coredhcp subnet and listen interface facts
+  ansible.builtin.set_fact:
+    coredhcp_subnets: >-
+      {{
+        [{
+          'subnet': network_data.admin_network.subnet,
+          'netmask_bits': network_data.admin_network.netmask_bits,
+          'router': network_data.admin_network.router,
+          'dynamic_range': network_data.admin_network.dynamic_range
+        }]
+        + network_data.admin_network.additional_subnets | default([])
+        + (bmc_details_status | bool | ternary(
+            [{
+              'subnet': bmc_network.subnet | default(''),
+              'netmask_bits': bmc_network.netmask_bits | default(''),
+              'router': bmc_network.router | default(''),
+              'dynamic_range': bmc_network.dynamic_range | default('')
+            }], []
+          ))
+        + (bmc_details_status | bool | ternary(
+            bmc_network.additional_subnets | default([]), []
+          ))
+      }}
+    coredhcp_listen_interfaces: >-
+      {{
+        [admin_nic]
+        + (bmc_details_status | bool | ternary([bmc_nic], []))
+      }}
+  vars:
+    bmc_network: "{{ network_data.bmc_network | default({}) }}"
+
 - name: Configure static routes for additional subnets
   when: network_data.admin_network.additional_subnets | default([]) | length > 0
   block:
@@ -171,6 +202,9 @@
     - name: Openchami installation failed
       ansible.builtin.fail:
         msg: "{{ openchami_install_fail_msg }}"
+
+- name: Configure and start iDRAC watcher
+  ansible.builtin.include_tasks: idrac_watcher.yml
 
 - name: Set openchami SELinux context for Local flow
   ansible.builtin.command: chcon -R system_u:object_r:container_file_t:s0 "{{ hostvars['localhost']['oim_shared_path'] }}/omnia/openchami"

@@ -25,8 +25,8 @@ discovery_report_dir: "/opt/omnia/discovery"
 # Messages
 admin_inventory_not_found_msg: |
   Admin inventory file not found at {{ admin_inventory_path }}.
-  Please create the file with columns: BMC_IP, ROW, RACK, USLOT
-  Optional columns: FUNCTIONAL_GROUP_NAME, GROUP_NAME
+  Please create the file with columns: SERVICE_TAG, GROUP_NAME, FUNCTIONAL_GROUP_NAME, ROW, RACK, SLOT, RANGE
+  SLOT may be left empty to be auto-assigned per (GROUP_NAME, FUNCTIONAL_GROUP_NAME, ROW, RACK).
 
 no_servers_found_msg: |
   No servers could be discovered from the admin inventory.

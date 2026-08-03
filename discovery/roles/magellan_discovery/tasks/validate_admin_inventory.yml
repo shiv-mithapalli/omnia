@@ -23,33 +23,16 @@
     msg: "{{ admin_inventory_not_found_msg }}"
   when: not admin_inventory_stat.stat.exists
 
-- name: Validate admin inventory CSV structure
-  validate_input:
-    omnia_base_dir: "{{ input_project_dir | dirname }}"
-    project_name: "{{ input_project_dir | basename }}"
-    tag_names: []
-    module_utils_path: "{{ (playbook_dir + '/../common/library/module_utils/') | ansible.builtin.realpath }}"
-    csv_file_path: "{{ admin_inventory_path }}"
-  register: admin_inventory_validation
+- name: Validate and expand admin inventory CSV
+  validate_admin_inventory:
+    input_csv: "{{ admin_inventory_path }}"
+    output_csv: "{{ admin_complete_inventory_path }}"
+  register: admin_complete_inventory_result
 
-- name: Read admin inventory CSV
-  community.general.read_csv:
-    path: "{{ admin_inventory_path }}"
-    key: "BMC_IP"
-  register: admin_inventory_csv
-
-- name: Set admin inventory data fact
+- name: Set complete inventory fact
   ansible.builtin.set_fact:
-    admin_inventory_data: "{{ admin_inventory_csv.dict.values() | list }}"
+    admin_complete_inventory: "{{ admin_complete_inventory_result.complete_inventory }}"
 
-- name: Validate required admin inventory columns
-  ansible.builtin.assert:
-    that:
-      - admin_inventory_csv.dict | length > 0
-      - "'BMC_IP' in admin_inventory_header"
-      - "'ROW' in admin_inventory_header"
-      - "'RACK' in admin_inventory_header"
-      - "'USLOT' in admin_inventory_header"
-    fail_msg: "admin_inventory.csv must contain BMC_IP, ROW, RACK, USLOT columns. Optional: FUNCTIONAL_GROUP_NAME, GROUP_NAME"
-  vars:
-    admin_inventory_header: "{{ admin_inventory_csv.dict.values() | list | first | list }}"
+- name: Display complete inventory count
+  ansible.builtin.debug:
+    msg: "Expanded {{ admin_complete_inventory | length }} complete inventory entries from {{ admin_inventory_path }}"

@@ -25,7 +25,7 @@
 
 - name: Collect inventory from iDRACs via Redfish
   magellan_inventory:
-    admin_inventory: "{{ admin_inventory_data }}"
+    admin_inventory: "{{ admin_complete_inventory }}"
     bmc_username: "{{ bmc_username }}"
     bmc_password: "{{ bmc_password }}"
     default_functional_group: "{{ default_functional_group }}"

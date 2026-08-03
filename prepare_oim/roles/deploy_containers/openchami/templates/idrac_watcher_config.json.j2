@@ -1,0 +1,11 @@
+{
+  "inventory_csv": {{ admin_inventory_csv | to_json | safe }},
+  "complete_inventory_csv": "/opt/omnia/openchami/admin_complete_inventory.csv",
+  "lease_db": "/opt/omnia/openchami/coredhcp.db",
+  "bmc_username": {{ bmc_username | to_json | safe }},
+  "bmc_password": {{ bmc_password | to_json | safe }},
+  "subnets": {{ coredhcp_subnets | to_json | safe }},
+  "concurrency": 5,
+  "poll_interval": 2,
+  "log_level": "INFO"
+}
