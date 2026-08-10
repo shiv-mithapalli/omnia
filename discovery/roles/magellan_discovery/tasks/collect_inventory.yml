@@ -18,9 +18,8 @@
     file: "{{ input_project_dir }}/network_spec.yml"
     name: network_spec_data
 
-- name: Set subnets from network spec
+- name: Set IB subnet from network spec
   ansible.builtin.set_fact:
-    admin_subnet: "{{ (network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.subnet | default('') }}"
     ib_subnet: "{{ (network_spec_data.Networks | selectattr('ib_network', 'defined') | first).ib_network.subnet | default('') }}"
 
 - name: Collect inventory from iDRACs via Redfish
@@ -32,6 +31,8 @@
     default_group_name: "{{ default_group_name }}"
     ib_subnet: "{{ ib_subnet }}"
     verify_ssl: false
+    service_tag_field: "{{ bmc_service_tag_field | default('') }}"
+    system_endpoint: "{{ bmc_system_endpoint | default('') }}"
   register: magellan_inventory_result
   no_log: true
 

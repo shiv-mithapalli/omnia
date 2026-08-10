@@ -160,7 +160,8 @@ ca_cert_path: /root_ca/root_ca.crt
 coredhcp_server_id: "{{ cluster_boot_ip }}"
 coredhcp_dns_server: "{{ cluster_boot_ip }}"
 coredhcp_router: "{{ cluster_boot_ip }}"
-coredhcp_tmp_lease_duration: "5m"
+coredhcp_tmp_lease_duration: "12m"
+bmc_on_lease_timeout: "6m"
 coredhcp_cache_validity: "30s"
 coredhcp_custom_ipxe: "default"
 coredhcp_tftp_single_port_mode: true

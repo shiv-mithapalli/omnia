@@ -19,6 +19,9 @@
 - name: Validate admin inventory CSV
   ansible.builtin.include_tasks: validate_admin_inventory.yml
 
+- name: Load BMC Redfish config CSV
+  ansible.builtin.include_tasks: load_bmc_redfish_config.yml
+
 - name: Collect server inventory from iDRACs
   ansible.builtin.include_tasks: collect_inventory.yml
 

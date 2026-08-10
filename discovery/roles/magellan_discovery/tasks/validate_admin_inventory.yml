@@ -31,7 +31,7 @@
 
 - name: Set complete inventory fact
   ansible.builtin.set_fact:
-    admin_complete_inventory: "{{ admin_complete_inventory_result.complete_inventory }}"
+    admin_complete_inventory: "{{ admin_complete_inventory_result.complete }}"
 
 - name: Display complete inventory count
   ansible.builtin.debug:

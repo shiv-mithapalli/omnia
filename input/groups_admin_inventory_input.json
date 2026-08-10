@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0.0",
+  "rows": [
+    {
+      "id": 1,
+      "racks": [
+        {
+          "id": 1,
+          "subnet": "100.20.107.0/24",
+          "ip_range": {
+            "start": "100.20.107.60",
+            "end": "100.20.107.68"
+          },
+          "groups": [
+            {
+              "name": "grp0",
+              "functional_groups": [
+                {
+                  "name": "service_kube_control_plane_x86_64",
+                  "nodes": [
+                    { "service_tag": "ABCD12" }
+                  ]
+                },
+                {
+                  "name": "service_kube_node_x86_64",
+                  "nodes": [
+                    { "service_tag": "ABFG34" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "grp1",
+              "functional_groups": [
+                {
+                  "name": "slurm_node_aarch64",
+                  "nodes": [
+                    { "service_tag": "ABCD78" },
+                    { "service_tag": "ABFG78" },
+                    { "service_tag": "ABFH78" },
+                    { "service_tag": "ABFH80" },
+                    { "service_tag": "ABFH81" },
+                    { "service_tag": "ABFH82" }
+                  ]
+                },
+                {
+                  "name": "slurm_control_node_x86_64",
+                  "nodes": [
+                    { "service_tag": "ABFG79" }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "subnet": "100.20.108.0/24",
+          "ip_range": {
+            "start": "100.20.108.10",
+            "end": "100.20.108.50"
+          },
+          "groups": [
+            {
+              "name": "grp0",
+              "functional_groups": [
+                {
+                  "name": "os_x86_64",
+                  "nodes": [
+                    { "service_tag": "ABKD88" },
+                    { "service_tag": "ABKD89" },
+                    { "service_tag": "ABKD90" },
+                    { "service_tag": "ABKD91" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "grp1",
+              "functional_groups": [
+                {
+                  "name": "login_node_x86_64",
+                  "nodes": [
+                    { "service_tag": "ABNA78" },
+                    { "service_tag": "ABNA80" },
+                    { "service_tag": "ABNA81" },
+                    { "service_tag": "ABNA82" }
+                  ]
+                },
+                {
+                  "name": "login_compiler_node_aarch64",
+                  "nodes": [
+                    { "service_tag": "ABFL82" },
+                    { "service_tag": "ABFL83" },
+                    { "service_tag": "ABFL84" },
+                    { "service_tag": "ABFL85" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

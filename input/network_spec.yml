@@ -67,7 +67,7 @@
 Networks:
 - admin_network:
     oim_nic_name: "eno1"
-    subnet: "172.16.0.0"
+    subnet: "172.16.107.0"
     netmask_bits: "24"
     primary_oim_admin_ip: "172.16.107.254"
     primary_oim_bmc_ip: ""
@@ -75,7 +75,23 @@ Networks:
     dynamic_range: "172.16.107.201-172.16.107.250"
     dns: []
     ntp_servers: []
-    additional_subnets: []
+    additional_subnets:
+      - subnet: "172.16.108.0"
+        netmask_bits: "24"
+        router: "172.16.108.254"
+        dynamic_range: "172.16.108.201-172.16.108.250"
+
+- bmc_network:
+    oim_nic_name: "eno2"  # Set this to the actual OIM BMC-facing interface
+    subnet: "100.20.107.0"
+    netmask_bits: "24"
+    router: "100.20.107.254"
+    dynamic_range: "100.20.107.201-100.20.107.250"
+    additional_subnets:
+      - subnet: "100.20.108.0"
+        netmask_bits: "24"
+        router: "100.20.108.254"
+        dynamic_range: "100.20.108.201-100.20.108.250"
 
 - ib_network:
     subnet: "192.168.0.0"

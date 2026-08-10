@@ -17,8 +17,23 @@
   ansible.builtin.set_fact:
     xnames_mapping_file: "{{ pxe_mapping_output_file | dirname }}/xnames_mapping_file_{{ pxe_mapping_timestamp }}.csv"
 
+- name: Compute servers with location data
+  ansible.builtin.set_fact:
+    servers_with_location: >-
+      {{
+        discovered_servers | default([])
+        | selectattr('row', 'defined')
+        | rejectattr('row', 'equalto', '')
+        | selectattr('rack', 'defined')
+        | rejectattr('rack', 'equalto', '')
+        | selectattr('uslot', 'defined')
+        | rejectattr('uslot', 'equalto', '')
+        | list
+      }}
+
 - name: Generate xnames mapping file from location data
   generate_xnames_mapping:
     servers: "{{ discovered_servers }}"
     output_file: "{{ xnames_mapping_file }}"
   register: xnames_result
+  when: servers_with_location | length > 0

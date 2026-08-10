@@ -101,8 +101,9 @@
       }}
     coredhcp_listen_interfaces: >-
       {{
-        [admin_nic]
-        + (bmc_details_status | bool | ternary([bmc_nic], []))
+        ([admin_nic]
+        + (bmc_details_status | bool | ternary([bmc_nic], [])))
+        | unique
       }}
   vars:
     bmc_network: "{{ network_data.bmc_network | default({}) }}"
@@ -111,6 +112,20 @@
   ansible.builtin.set_fact:
     dns_forwarders: "{{ network_data.admin_network.dns }}"
   when: (network_data.admin_network.dns | default([])) | length > 0
+
+- name: Check for admin sparse inventory
+  ansible.builtin.stat:
+    path: "{{ hostvars['localhost']['input_project_dir'] }}/admin_inventory.csv"
+  register: admin_inventory_stat
+
+- name: Set BMC lease handler enabled fact
+  ansible.builtin.set_fact:
+    bmc_lease_handler_enabled: >-
+      {{
+        (admin_inventory_stat.stat.exists | default(false))
+        and (bmc_details_status | bool)
+        and (openchami_coresmd_tag | regex_replace('^v', '') is version('0.6.0', '>='))
+      }}
 
 - name: Refresh coredhcp config file
   ansible.builtin.template:
@@ -137,5 +152,18 @@
     daemon_reload: true
   when: coredhcp_config_result.changed or coredns_config_result.changed
 
-- name: Configure and refresh iDRAC watcher
-  ansible.builtin.include_tasks: idrac_watcher.yml
+- name: Configure and refresh BMC lease handler
+  ansible.builtin.include_tasks: bmc_lease_handler.yml
+  when: bmc_lease_handler_enabled | bool
+
+- name: Set openchami SELinux context for Local flow
+  ansible.builtin.command: chcon -R system_u:object_r:container_file_t:s0 "{{ hostvars['localhost']['oim_shared_path'] }}/omnia/openchami"
+  changed_when: true
+  failed_when: false
+  when: hostvars['localhost']['omnia_share_option'] == 'Local'
+
+- name: Set openchami SELinux context for NFS internal flow
+  ansible.builtin.command: chcon -R system_u:object_r:container_file_t:s0 "{{ hostvars['localhost']['nfs_server_share_path'] }}/omnia/openchami"
+  changed_when: true
+  failed_when: false
+  when: (hostvars['localhost']['omnia_share_option'] == 'NFS' and hostvars['localhost']['nfs_type'] | default('') == 'internal')

@@ -33,6 +33,12 @@ server4:
         lease_file=/tmp/coredhcp.db
         script_path={{ coredhcp_custom_ipxe }}
         lease_time={{ coredhcp_tmp_lease_duration }}
+{% if bmc_lease_handler_enabled | default(false) | bool %}
+        on_lease_script=/scripts/bmc_lease_handler.py
+        on_lease_timeout={{ bmc_on_lease_timeout | default('6m') }}
+        on_lease_release_exit_code={{ bmc_on_lease_release_exit_code | default(2) }}
+        on_lease_done_action=nak
+{% endif %}
 {% for s in coredhcp_subnets | default([]) %}
 {% set range_parts = s.dynamic_range | split('-') %}
         subnet_pool={{ s.subnet }}/{{ s.netmask_bits }},{{ range_parts[0] }},{{ range_parts[1] }}

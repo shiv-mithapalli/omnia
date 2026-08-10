@@ -29,6 +29,15 @@
     output_file: "{{ discovery_report_output_file }}"
   register: discovery_report_result
 
+- name: Set xnames mapping summary
+  ansible.builtin.set_fact:
+    xnames_mapping_message: >-
+      {{
+        'BMC xnames mapping file generated: ' ~ xnames_mapping_file
+        if (xnames_result | default({'xnames_count': 0})).xnames_count | default(0) | int > 0
+        else 'BMC xnames mapping skipped: no location data present'
+      }}
+
 - name: Display Magellan discovery completion message
   ansible.builtin.debug:
     msg:
@@ -36,7 +45,7 @@
       - "Magellan Discovery Complete"
       - "============================================================"
       - "BMC PXE mapping file generated: {{ pxe_mapping_output_file }}"
-      - "BMC xnames mapping file generated: {{ xnames_mapping_file }}"
+      - "{{ xnames_mapping_message }}"
       - "BMC discovery report generated: {{ discovery_report_output_file }}"
       - "  (Lists link status of BMC, Ethernet, and InfiniBand NICs for each server)"
       - "Total servers discovered: {{ discovered_servers | length }}"

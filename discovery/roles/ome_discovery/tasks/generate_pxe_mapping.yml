@@ -18,9 +18,16 @@
     file: "{{ input_project_dir | default(playbook_dir + '/../input') }}/network_spec.yml"
     name: network_spec_data
 
-- name: Set admin_subnet from network spec
+- name: Set admin subnets from network spec
   ansible.builtin.set_fact:
-    admin_subnet: "{{ (network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.subnet | default('') }}"
+    admin_subnets: >-
+      {{
+        [{
+          'subnet': (network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.subnet | default(''),
+          'netmask_bits': (network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.netmask_bits | default('')
+        }]
+        + ((network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.additional_subnets | default([]))
+      }}
 
 - name: Set ib_subnet from network spec
   ansible.builtin.set_fact:
@@ -50,5 +57,5 @@
     hostname_start: "{{ hostname_start_number }}"
     hostname_padding: "{{ hostname_padding }}"
     ib_subnet: "{{ ib_subnet }}"
-    admin_subnet: "{{ admin_subnet }}"
+    admin_subnets: "{{ admin_subnets }}"
   register: pxe_mapping_result

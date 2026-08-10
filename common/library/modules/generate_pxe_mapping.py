@@ -16,6 +16,7 @@
 """Ansible module to generate PXE mapping file from discovered server inventory."""
 
 import csv
+import ipaddress
 import os
 import re
 from ansible.module_utils.basic import AnsibleModule
@@ -66,13 +67,13 @@ options:
         required: false
         type: int
         default: 5
+    admin_subnets:
+        description: List of admin network CIDR entries. Each entry contains 'subnet' and 'netmask_bits'. The entry whose CIDR contains the constructed admin IP is selected (longest-prefix match).
+        required: false
+        type: list
+        default: []
     ib_subnet:
         description: InfiniBand subnet (e.g. 192.168.2.0) used to derive IB_IP from BMC IP last two octets
-        required: false
-        type: str
-        default: ""
-    admin_subnet:
-        description: Admin network subnet (e.g. 172.16.0.0) - first two octets combined with last two octets of iDRAC IP to derive ADMIN_IP
         required: false
         type: str
         default: ""
@@ -91,6 +92,11 @@ EXAMPLES = r'''
     hostname_start: 1
     hostname_padding: 5
     ib_subnet: "192.168.2.0"
+    admin_subnets:
+      - subnet: "172.16.107.0"
+        netmask_bits: "24"
+      - subnet: "172.16.108.0"
+        netmask_bits: "24"
 '''
 
 RETURN = r'''
@@ -152,21 +158,61 @@ def extract_su_from_hostname(bmc_hostname):
     return ""
 
 
-def calculate_admin_ip(admin_subnet, bmc_ip):
-    """
-    Derive admin IP from admin_subnet and BMC IP.
-    First two octets come from admin_subnet, last two from bmc_ip.
-    Example: admin_subnet=172.16.0.0, bmc_ip=172.16.0.250 -> 172.16.0.250
-    """
-    if not admin_subnet or not bmc_ip:
-        return ""
-
-    subnet_octets = admin_subnet.split('.')
+def _candidate_ip_from_network(bmc_ip, subnet_str):
+    """Build a candidate IP using the first two octets of a network and the last two of the BMC IP."""
     bmc_octets = bmc_ip.split('.')
-    if len(subnet_octets) != 4 or len(bmc_octets) != 4:
+    subnet_octets = subnet_str.split('.')
+    if len(bmc_octets) != 4 or len(subnet_octets) != 4:
+        return ""
+    return f"{subnet_octets[0]}.{subnet_octets[1]}.{bmc_octets[2]}.{bmc_octets[3]}"
+
+
+def resolve_admin_ip(bmc_ip, admin_subnets):
+    """
+    Derive admin IP from a BMC IP using the best matching admin subnet CIDR.
+
+    Each admin_subnet entry is a dict with 'subnet' (network address) and
+    'netmask_bits'. The candidate admin IP is built from the first two octets
+    of the admin subnet and the last two octets of the BMC IP. The candidate
+    falling inside the most specific (longest prefix) matching CIDR wins.
+
+    If no CIDR matches, an empty string is returned so the caller can detect a
+    configuration mismatch.
+    """
+    if not bmc_ip or not admin_subnets:
         return ""
 
-    return f"{subnet_octets[0]}.{subnet_octets[1]}.{bmc_octets[2]}.{bmc_octets[3]}"
+    bmc_octets = bmc_ip.split('.')
+    if len(bmc_octets) != 4:
+        return ""
+
+    best_match = ""
+    best_prefix = -1
+    for entry in admin_subnets:
+        subnet_str = entry.get("subnet", "") if isinstance(entry, dict) else str(entry)
+        netmask_bits = entry.get("netmask_bits", "") if isinstance(entry, dict) else ""
+        if not subnet_str or not netmask_bits:
+            continue
+
+        try:
+            network = ipaddress.ip_network(f"{subnet_str}/{netmask_bits}", strict=False)
+        except (ValueError, TypeError):
+            continue
+
+        candidate_str = _candidate_ip_from_network(bmc_ip, subnet_str)
+        if not candidate_str:
+            continue
+
+        try:
+            candidate = ipaddress.ip_address(candidate_str)
+        except (ValueError, TypeError):
+            continue
+
+        if candidate in network and network.prefixlen > best_prefix:
+            best_match = candidate_str
+            best_prefix = network.prefixlen
+
+    return best_match
 
 
 def calculate_ib_ip(ib_subnet, bmc_ip):
@@ -201,7 +247,7 @@ def main():
         "hostname_start": {"type": "int", "required": False, "default": 1},
         "hostname_padding": {"type": "int", "required": False, "default": 5},
         "ib_subnet": {"type": "str", "required": False, "default": ""},
-        "admin_subnet": {"type": "str", "required": False, "default": ""}
+        "admin_subnets": {"type": "list", "required": False, "default": []}
     }
 
     module = AnsibleModule(
@@ -217,7 +263,7 @@ def main():
     hostname_start = module.params['hostname_start']
     hostname_padding = module.params['hostname_padding']
     ib_subnet = module.params['ib_subnet']
-    admin_subnet = module.params['admin_subnet']
+    admin_subnets = module.params['admin_subnets']
 
     # CSV headers as specified
     headers = [
@@ -251,7 +297,7 @@ def main():
             bmc_ip = server.get('idrac_ip', '')
             bmc_hostname = server.get('idrac_hostname', '')
             ib_nic_name = server.get('ib_nic_name', '')
-            admin_ip = calculate_admin_ip(admin_subnet, bmc_ip)
+            admin_ip = resolve_admin_ip(bmc_ip, admin_subnets)
             ib_ip = calculate_ib_ip(ib_subnet, bmc_ip) if ib_nic_name else ""
 
             # Per-server optional values from inventory (Magellan) vs OME group (OME).

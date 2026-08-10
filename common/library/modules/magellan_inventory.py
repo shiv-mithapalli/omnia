@@ -211,8 +211,9 @@ def is_infiniBand_function(func_data, adapter_data):
 
 
 def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet,
-                             verify_ssl, timeout, max_retries):
-    """Collect inventory for a single server from its iDRAC."""
+                             verify_ssl, timeout, max_retries, service_tag_field="",
+                             system_endpoint=""):
+    """Collect inventory for a single server from its BMC."""
     bmc_ip = _get_value(admin_server, "BMC_IP")
     if not bmc_ip:
         raise ValueError("Admin inventory entry is missing BMC_IP")
@@ -237,34 +238,46 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
         "ib_nic_link_status": "",
         "row": _get_value(admin_server, "ROW") or "",
         "rack": _get_value(admin_server, "RACK") or "",
-        "uslot": _get_value(admin_server, "USLOT") or "",
+        "uslot": _get_value(admin_server, "USLOT", "SLOT") or "",
     }
 
-    # Resolve Systems collection and pick the embedded system
-    systems_resp = redfish_get(session, base_url, "/redfish/v1/Systems",
-                                 auth, verify_ssl, timeout, max_retries)
-    if systems_resp.status_code != 200:
-        raise ValueError(f"Failed to fetch Systems collection: HTTP {systems_resp.status_code}")
-    members = systems_resp.json().get("Members", [])
-    system_path = ""
-    for member in members:
-        path = member.get("@odata.id", "")
-        if path:
-            system_path = path
-            break
-    if not system_path:
-        raise ValueError("No Systems member found in Redfish response")
+    # Resolve the system endpoint. If a system_endpoint is configured, use it
+    # directly; otherwise walk the Systems collection and pick the first member.
+    if system_endpoint:
+        system_path = system_endpoint
+        system_resp = redfish_get(session, base_url, system_path,
+                                  auth, verify_ssl, timeout, max_retries)
+        if system_resp.status_code != 200:
+            raise ValueError(f"Failed to fetch system endpoint {system_path}: HTTP {system_resp.status_code}")
+        system_data = system_resp.json()
+    else:
+        systems_resp = redfish_get(session, base_url, "/redfish/v1/Systems",
+                                   auth, verify_ssl, timeout, max_retries)
+        if systems_resp.status_code != 200:
+            raise ValueError(f"Failed to fetch Systems collection: HTTP {systems_resp.status_code}")
+        members = systems_resp.json().get("Members", [])
+        system_path = ""
+        for member in members:
+            path = member.get("@odata.id", "")
+            if path:
+                system_path = path
+                break
+        if not system_path:
+            raise ValueError("No Systems member found in Redfish response")
 
-    system_data = redfish_get(session, base_url, system_path,
-                              auth, verify_ssl, timeout, max_retries).json()
+        system_data = redfish_get(session, base_url, system_path,
+                                  auth, verify_ssl, timeout, max_retries).json()
 
     csv_service_tag = _get_value(admin_server, "SERVICE_TAG") or ""
-    redfish_service_tag = system_data.get("SKU") or system_data.get("SerialNumber") or ""
+    if service_tag_field:
+        redfish_service_tag = system_data.get(service_tag_field, "") or ""
+    else:
+        redfish_service_tag = system_data.get("SKU") or system_data.get("SerialNumber") or ""
     if csv_service_tag and redfish_service_tag:
         if csv_service_tag.upper() != redfish_service_tag.upper():
             raise ValueError(
                 f"Service tag mismatch for {bmc_ip}: "
-                f"inventory says {csv_service_tag}, iDRAC reports {redfish_service_tag}"
+                f"inventory says {csv_service_tag}, BMC reports {redfish_service_tag}"
             )
     info["service_tag"] = csv_service_tag or redfish_service_tag
     info["model"] = system_data.get("Model") or ""
@@ -407,6 +420,8 @@ def main():
         "verify_ssl": {"type": "bool", "required": False, "default": False},
         "timeout": {"type": "int", "required": False, "default": 30},
         "max_retries": {"type": "int", "required": False, "default": 3},
+        "service_tag_field": {"type": "str", "required": False, "default": ""},
+        "system_endpoint": {"type": "str", "required": False, "default": ""},
     }
 
     module = AnsibleModule(argument_spec=module_args, supports_check_mode=True)
@@ -423,6 +438,8 @@ def main():
     verify_ssl = module.params["verify_ssl"]
     timeout = module.params["timeout"]
     max_retries = module.params["max_retries"]
+    service_tag_field = module.params["service_tag_field"]
+    system_endpoint = module.params["system_endpoint"]
 
     if module.check_mode:
         module.exit_json(changed=False, servers=[])
@@ -433,7 +450,8 @@ def main():
     def process(entry):
         return collect_server_inventory(
             entry, bmc_username, bmc_password, ib_subnet,
-            verify_ssl, timeout, max_retries
+            verify_ssl, timeout, max_retries, service_tag_field,
+            system_endpoint
         )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:

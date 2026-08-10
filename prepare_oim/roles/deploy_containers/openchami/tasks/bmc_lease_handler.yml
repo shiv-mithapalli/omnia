@@ -1,0 +1,182 @@
+# Copyright 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# This file is only included when bmc_lease_handler_enabled is true, meaning
+# both bmc_details_status (bmc_network configured) and admin_inventory.csv are
+# present. No need to re-check those conditions here.
+
+- name: Check for BMC credentials file
+  ansible.builtin.stat:
+    path: "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
+  register: bmc_cred_file_stat
+
+- name: Load BMC credentials
+  ansible.builtin.include_vars:
+    file: "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
+  no_log: true
+  when: bmc_cred_file_stat.stat.exists | default(false)
+
+- name: Set BMC lease handler facts
+  ansible.builtin.set_fact:
+    bmc_username: "{{ bmc_username | default('root', true) }}"
+    bmc_password: "{{ bmc_password | default('calvin', true) }}"
+    admin_inventory_csv: "{{ hostvars['localhost']['input_project_dir'] }}/admin_inventory.csv"
+    admin_complete_inventory_csv: "/opt/omnia/openchami/admin_complete_inventory.csv"
+  no_log: true
+
+- name: Ensure BMC lease handler directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "/opt/omnia/openchami"
+    - "/opt/omnia/log/openchami"
+
+- name: Expand sparse admin inventory to complete inventory
+  ansible.builtin.command: >-
+    /usr/bin/python3 /opt/omnia/utils/inventory_expander.py
+    --input "{{ admin_inventory_csv }}"
+    --csv "{{ admin_complete_inventory_csv }}"
+  changed_when: false
+
+- name: Check for BMC Redfish config CSV
+  ansible.builtin.stat:
+    path: "{{ hostvars['localhost']['input_project_dir'] }}/bmc_redfish_config.csv"
+  register: bmc_redfish_csv_stat
+
+- name: Fail if bmc_redfish_config.csv is missing
+  ansible.builtin.fail:
+    msg: "bmc_redfish_config.csv not found in {{ hostvars['localhost']['input_project_dir'] }}"
+  when: not bmc_redfish_csv_stat.stat.exists
+
+- name: Validate and load BMC Redfish config CSV
+  validate_bmc_redfish_config:
+    csv_path: "{{ hostvars['localhost']['input_project_dir'] }}/bmc_redfish_config.csv"
+  register: bmc_redfish_config_result
+
+- name: Set Redfish endpoint facts from CSV
+  ansible.builtin.set_fact:
+    bmc_vendor_profile: "{{ bmc_redfish_config_result.data.vendor_profile }}"
+    bmc_system_endpoint: "{{ bmc_redfish_config_result.data.system_endpoint }}"
+    bmc_manager_attrs_endpoint: "{{ bmc_redfish_config_result.data.manager_attributes_endpoint }}"
+    bmc_location_endpoint: "{{ bmc_redfish_config_result.data.location_endpoint | default('') }}"
+    bmc_service_tag_field: "{{ bmc_redfish_config_result.data.service_tag_field }}"
+    bmc_static_ip_address_key: "{{ bmc_redfish_config_result.data.static_ip_address_key }}"
+    bmc_static_ip_netmask_key: "{{ bmc_redfish_config_result.data.static_ip_netmask_key }}"
+    bmc_static_ip_gateway_key: "{{ bmc_redfish_config_result.data.static_ip_gateway_key }}"
+    bmc_static_ip_dhcp_enable_key: "{{ bmc_redfish_config_result.data.static_ip_dhcp_enable_key }}"
+    bmc_dhcp_disable_value: "{{ bmc_redfish_config_result.data.dhcp_disable_value }}"
+    bmc_idrac_name_key: "{{ bmc_redfish_config_result.data.idrac_name_key | default('') }}"
+    bmc_idrac_name_format: "{{ bmc_redfish_config_result.data.idrac_name_format | default('') }}"
+    bmc_location_fields: >-
+      {{
+        ({})
+        | combine(
+          {'aisle': bmc_redfish_config_result.data.location_aisle_field}
+          if bmc_redfish_config_result.data.location_aisle_field | default('') | length > 0 else {}
+        )
+        | combine(
+          {'rack': bmc_redfish_config_result.data.location_rack_field}
+          if bmc_redfish_config_result.data.location_rack_field | default('') | length > 0 else {}
+        )
+        | combine(
+          {'slot': bmc_redfish_config_result.data.location_slot_field}
+          if bmc_redfish_config_result.data.location_slot_field | default('') | length > 0 else {}
+        )
+      }}
+
+- name: Build BMC subnet CIDR list
+  ansible.builtin.set_fact:
+    bmc_handler_bmc_subnets: >-
+      {{
+        [bmc_subnet ~ '/' ~ (bmc_netmask_bits | string)]
+        + [s.subnet ~ '/' ~ s.netmask_bits for s in (bmc_additional_subnets | default([]))]
+      }}
+
+- name: Build BMC handler config dict
+  ansible.builtin.set_fact:
+    bmc_handler_config:
+      inventory_csv: "/config/admin_complete_inventory.csv"
+      bmc_username: "{{ bmc_username }}"
+      bmc_password: "{{ bmc_password }}"
+      subnets: "{{ coredhcp_subnets }}"
+      bmc_subnets: "{{ bmc_handler_bmc_subnets }}"
+      vendor_profile: "{{ bmc_vendor_profile }}"
+      vendor_profiles:
+        "{{ bmc_vendor_profile }}":
+          system_endpoint: "{{ bmc_system_endpoint }}"
+          manager_attributes_endpoint: "{{ bmc_manager_attrs_endpoint }}"
+          location_endpoint: "{{ (bmc_location_endpoint | length > 0) | ternary(bmc_location_endpoint, none) }}"
+          service_tag_field: "{{ bmc_service_tag_field }}"
+          static_ip_keys:
+            address: "{{ bmc_static_ip_address_key }}"
+            netmask: "{{ bmc_static_ip_netmask_key }}"
+            gateway: "{{ bmc_static_ip_gateway_key }}"
+            dhcp_enable: "{{ bmc_static_ip_dhcp_enable_key }}"
+          dhcp_enable_flag: "{{ bmc_dhcp_disable_value }}"
+          location_fields: "{{ bmc_location_fields }}"
+          idrac_name_key: "{{ (bmc_idrac_name_key | length > 0) | ternary(bmc_idrac_name_key, none) }}"
+          idrac_name_format: "{{ (bmc_idrac_name_format | length > 0) | ternary(bmc_idrac_name_format, none) }}"
+      redfish_timeout: "{{ bmc_redfish_timeout | default(30) | int }}"
+      redfish_retries: "{{ bmc_redfish_retries | default(0) | int }}"
+      log_level: "{{ bmc_log_level | default('INFO') }}"
+
+- name: Write BMC lease handler config JSON
+  ansible.builtin.copy:
+    content: "{{ bmc_handler_config | to_nice_json }}"
+    dest: "/opt/omnia/openchami/bmc_config.json"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Ensure BMC lease handler script is executable
+  ansible.builtin.file:
+    path: "/opt/omnia/utils/bmc_lease_handler.py"
+    mode: "0755"
+  register: bmc_script_result
+
+- name: Set SELinux context on BMC handler config, inventory, and script files
+  ansible.builtin.command: >-
+    chcon system_u:object_r:container_file_t:s0
+    /opt/omnia/openchami/bmc_config.json
+    /opt/omnia/openchami/admin_complete_inventory.csv
+    /opt/omnia/utils/bmc_lease_handler.py
+  changed_when: true
+  failed_when: false
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: Mount BMC handler config and inventory into coresmd-coredhcp container
+  ansible.builtin.lineinfile:
+    path: "/etc/containers/systemd/coresmd-coredhcp.container"
+    regexp: "^Volume={{ item.path | regex_escape }}:{{ item.dest | regex_escape }}($|:)"
+    line: "Volume={{ item.path }}:{{ item.dest }}:ro"
+    insertafter: "^\\[Container\\]$"
+    create: false
+  loop:
+    - { path: "/opt/omnia/openchami/bmc_config.json", dest: "/config/bmc_config.json" }
+    - { path: "/opt/omnia/openchami/admin_complete_inventory.csv", dest: "/config/admin_complete_inventory.csv" }
+    - { path: "/opt/omnia/utils/bmc_lease_handler.py", dest: "/scripts/bmc_lease_handler.py" }
+  when: ansible_facts['os_family'] == 'RedHat'
+  register: bmc_volumes_result
+
+- name: Reload systemd and restart CoreDHCP to apply BMC handler volumes
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: coresmd-coredhcp.service
+    state: restarted
+  when: >-
+    bmc_volumes_result is defined and
+    bmc_volumes_result.results | default([]) | selectattr('changed') | list | length > 0

@@ -149,8 +149,9 @@
       }}
     coredhcp_listen_interfaces: >-
       {{
-        [admin_nic]
-        + (bmc_details_status | bool | ternary([bmc_nic], []))
+        ([admin_nic]
+        + (bmc_details_status | bool | ternary([bmc_nic], [])))
+        | unique
       }}
   vars:
     bmc_network: "{{ network_data.bmc_network | default({}) }}"
@@ -194,6 +195,20 @@
   ansible.builtin.set_fact:
     storage_backend: "{{ s3_configurations.provider | lower }}"
 
+- name: Check for admin sparse inventory
+  ansible.builtin.stat:
+    path: "{{ hostvars['localhost']['input_project_dir'] }}/admin_inventory.csv"
+  register: admin_inventory_stat
+
+- name: Set BMC lease handler enabled fact
+  ansible.builtin.set_fact:
+    bmc_lease_handler_enabled: >-
+      {{
+        (admin_inventory_stat.stat.exists | default(false))
+        and (bmc_details_status | bool)
+        and (openchami_coresmd_tag | regex_replace('^v', '') is version('0.6.0', '>='))
+      }}
+
 - name: Deploy openchami configs
   block:
     - name: Install and configure openchami
@@ -203,9 +218,10 @@
       ansible.builtin.fail:
         msg: "{{ openchami_install_fail_msg }}"
 
-- name: Configure and start iDRAC watcher
-  ansible.builtin.include_tasks: idrac_watcher.yml
-
+- name: Configure BMC lease handler
+  ansible.builtin.include_tasks: bmc_lease_handler.yml
+  when: bmc_lease_handler_enabled | bool
+ 
 - name: Set openchami SELinux context for Local flow
   ansible.builtin.command: chcon -R system_u:object_r:container_file_t:s0 "{{ hostvars['localhost']['oim_shared_path'] }}/omnia/openchami"
   changed_when: true

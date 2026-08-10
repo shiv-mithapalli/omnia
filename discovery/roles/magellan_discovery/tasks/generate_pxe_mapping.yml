@@ -20,7 +20,14 @@
 
 - name: Set admin and IB subnets from network spec
   ansible.builtin.set_fact:
-    admin_subnet: "{{ (network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.subnet | default('') }}"
+    admin_subnets: >-
+      {{
+        [{
+          'subnet': (network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.subnet | default(''),
+          'netmask_bits': (network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.netmask_bits | default('')
+        }]
+        + ((network_spec_data.Networks | selectattr('admin_network', 'defined') | first).admin_network.additional_subnets | default([]))
+      }}
     ib_subnet: "{{ (network_spec_data.Networks | selectattr('ib_network', 'defined') | first).ib_network.subnet | default('') }}"
 
 - name: Set timestamp for PXE mapping file
@@ -47,7 +54,7 @@
     hostname_start: "{{ hostname_start_number }}"
     hostname_padding: "{{ hostname_padding }}"
     ib_subnet: "{{ ib_subnet }}"
-    admin_subnet: "{{ admin_subnet }}"
+    admin_subnets: "{{ admin_subnets }}"
   register: pxe_mapping_result
 
 - name: Display PXE mapping result
