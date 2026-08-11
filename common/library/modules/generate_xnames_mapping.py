@@ -205,6 +205,14 @@ def main():
     servers = module.params["servers"]
     output_file = module.params["output_file"]
 
+    if module.check_mode:
+        module.exit_json(
+            changed=True,
+            output_file=output_file,
+            xnames_count=len(servers),
+            msg=f"Would generate {len(servers)} xnames in {output_file}",
+        )
+
     try:
         output_file, xnames_count = generate_xnames_mapping(servers, output_file)
         module.exit_json(

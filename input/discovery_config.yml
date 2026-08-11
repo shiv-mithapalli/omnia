@@ -35,7 +35,8 @@ ome_ip: ""
 # This CSV is consumed by the magellan_discovery role to generate
 # bmc_pxe_mapping_file_<timestamp>.csv and xnames_mapping_file.csv.
 # The admin inventory must contain at least the columns:
-#   BMC_IP, ROW, RACK, USLOT
-# Optional columns: FUNCTIONAL_GROUP_NAME, GROUP_NAME
+#   SERVICE_TAG, GROUP_NAME, FUNCTIONAL_GROUP_NAME, RANGE
+# Optional columns: ROW, RACK, USLOT
+#   (ROW/RACK/USLOT are required if you want xnames mapping generation)
 # Example: "/opt/omnia/input/project_default/admin_inventory.csv"
 admin_inventory_path: "/opt/omnia/input/project_default/admin_inventory.csv"

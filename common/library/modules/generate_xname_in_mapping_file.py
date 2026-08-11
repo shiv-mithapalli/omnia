@@ -19,12 +19,14 @@ import os
 import pandas as pd
 from ansible.module_utils.basic import AnsibleModule
 
-def generate_xname_in_mapping_file(mapping_file_path, module):
+def generate_xname_in_mapping_file(mapping_file_path, module, xnames_mapping_file_path=None):
     """
     Generates xname in pxe mapping file:
     Parameters:
         mapping_file_path (str): The path to the pxe mapping file.
         module (AnsibleModule): The Ansible module instance for handling exit and failure.
+        xnames_mapping_file_path (str, optional): Path to the xnames mapping file.
+            When omitted, the file is resolved from the pxe mapping file directory.
     """
     try:
         csv_file = pd.read_csv(mapping_file_path)
@@ -34,9 +36,14 @@ def generate_xname_in_mapping_file(mapping_file_path, module):
         # Strip whitespace from column values and names
         csv_file = csv_file.apply(lambda x: x.str.strip() if x.dtype == 'object' else x)
 
-        # Derive the path to xnames_mapping_file.csv from the same directory as the pxe mapping file.
-        # Discovery roles are responsible for generating this file before provision.yml runs.
-        xnames_file_path = os.path.join(os.path.dirname(mapping_file_path), "xnames_mapping_file.csv")
+        # Resolve the xnames mapping file path. If a path was supplied by the
+        # caller (e.g. the original pxe mapping file directory), use it;
+        # otherwise fall back to the legacy behaviour of looking next to the
+        # temporary/copy pxe mapping file.
+        if xnames_mapping_file_path:
+            xnames_file_path = xnames_mapping_file_path
+        else:
+            xnames_file_path = os.path.join(os.path.dirname(mapping_file_path), "xnames_mapping_file.csv")
 
         # Fallback xname generation if xname_mapping_file.csv is not present.
         if not os.path.exists(xnames_file_path):
@@ -124,13 +131,15 @@ def main():
 
 	"""
     module_args = {
-        'mapping_file_path': {'type': 'path', 'required': True }
+        'mapping_file_path': {'type': 'path', 'required': True },
+        'xnames_mapping_file_path': {'type': 'path', 'required': False, 'default': None}
     }
 
     module = AnsibleModule(argument_spec=module_args, supports_check_mode=False)
     mapping_file_path = module.params.get('mapping_file_path')
+    xnames_mapping_file_path = module.params.get('xnames_mapping_file_path')
 
-    generate_xname_in_mapping_file(mapping_file_path, module)
+    generate_xname_in_mapping_file(mapping_file_path, module, xnames_mapping_file_path)
 
 
 if __name__ == "__main__":

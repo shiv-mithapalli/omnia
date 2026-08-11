@@ -140,8 +140,8 @@ def _get_value(server, *keys):
 def redfish_get(session, base_url, path, auth, verify_ssl, timeout, max_retries):
     """Perform a Redfish GET with retries."""
     url = f"{base_url}{path}"
-    last_exc = None
     for attempt in range(1, max_retries + 1):
+        last_exc = None
         try:
             response = session.get(url, auth=auth, verify=verify_ssl, timeout=timeout)
             if response.status_code < 500:

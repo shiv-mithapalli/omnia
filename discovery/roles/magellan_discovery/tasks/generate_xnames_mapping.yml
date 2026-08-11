@@ -33,7 +33,7 @@
 
 - name: Generate xnames mapping file from location data
   generate_xnames_mapping:
-    servers: "{{ discovered_servers }}"
+    servers: "{{ servers_with_location }}"
     output_file: "{{ xnames_mapping_file }}"
   register: xnames_result
   when: servers_with_location | length > 0

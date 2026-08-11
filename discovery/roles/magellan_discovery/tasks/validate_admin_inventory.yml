@@ -27,6 +27,7 @@
   validate_admin_inventory:
     input_csv: "{{ admin_inventory_path }}"
     output_csv: "{{ admin_complete_inventory_path }}"
+    utils_path: "{{ playbook_dir | dirname }}/utils"
   register: admin_complete_inventory_result
 
 - name: Set complete inventory fact

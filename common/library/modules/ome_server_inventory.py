@@ -160,8 +160,8 @@ class OMEClient:
 
     def _request_with_retry(self, method, url, **kwargs):
         """Execute an HTTP request with retry on transient failures (5xx / timeout)."""
-        last_exc = None
         for attempt in range(1, self.MAX_RETRIES + 1):
+            last_exc = None
             try:
                 response = self.session.request(method, url, **kwargs)
                 if response.status_code < 500:
