@@ -41,7 +41,7 @@ server4:
 {% endif %}
 {% for s in coredhcp_subnets | default([]) %}
 {% set range_parts = s.dynamic_range | split('-') %}
-        subnet_pool={{ s.subnet }}/{{ s.netmask_bits }},{{ range_parts[0] }},{{ range_parts[1] }}
+        subnet_pool={{ s.subnet }}/{{ s.netmask_bits }},{{ range_parts[0] }},{{ range_parts[1] }},{{ s.router }}
 {% endfor %}
 {% else %}
     # Single-subnet mode: positional argument format (coresmd v0.4.x)
@@ -78,7 +78,7 @@ server4:
     #     lease_time={{ coredhcp_tmp_lease_duration }}
 {% for s in coredhcp_subnets | default([]) %}
 {% set range_parts = s.dynamic_range | split('-') %}
-    #     subnet_pool={{ s.subnet }}/{{ s.netmask_bits }},{{ range_parts[0] }},{{ range_parts[1] }}
+    #     subnet_pool={{ s.subnet }}/{{ s.netmask_bits }},{{ range_parts[0] }},{{ range_parts[1] }},{{ s.router }}
 {% endfor %}
 {% endif %}
 {% endif %}
