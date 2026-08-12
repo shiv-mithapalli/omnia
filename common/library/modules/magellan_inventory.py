@@ -187,6 +187,11 @@ def format_ib_nic_name(function_id, port_id=""):
     if m:
         return f"InfiniBand.Single-{m.group(2)}"
 
+    # e.g. InfiniBand.Slot.7 or InfiniBand.PCIe.Slot.7 (no port suffix) -> InfiniBand.Slot.7-1
+    m = re.match(r"^InfiniBand\.(?:(?:PCIe)\.?)?Slot\.([0-9a-fA-F]+)$", name, re.IGNORECASE)
+    if m:
+        return f"InfiniBand.Slot.{m.group(1)}-1"
+
     # Bare adapter/function name with no port: append -1
     if name:
         return f"InfiniBand.Single-1"
@@ -196,10 +201,15 @@ def format_ib_nic_name(function_id, port_id=""):
 
 def is_infiniBand_function(func_data, adapter_data):
     """Determine whether a network device function is InfiniBand."""
-    func_id = func_data.get("Id", "")
     func_type = (func_data.get("NetDevFuncType") or "").lower()
+    # NetDevFuncType is the authoritative source when present.
     if func_type == "infiniband":
         return True
+    if func_type == "ethernet":
+        return False
+
+    # No explicit function type: fall back to identifier / adapter heuristics.
+    func_id = func_data.get("Id", "")
     if "infiniband" in func_id.lower():
         return True
     adapter_name = (adapter_data.get("Name") or adapter_data.get("Id") or "").lower()
@@ -321,7 +331,12 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
         fallback_eth = {}
         fallback_ib = {}
 
+        first_nic_found = False
+        ib_found = False
+
         for adapter_member in adapters:
+            if first_nic_found and ib_found:
+                break
             adapter_path = adapter_member.get("@odata.id", "")
             if not adapter_path:
                 continue
@@ -340,6 +355,8 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
                 continue
 
             for func_member in funcs_resp.json().get("Members", []):
+                if first_nic_found and ib_found:
+                    break
                 func_path = func_member.get("@odata.id", "")
                 if not func_path:
                     continue
@@ -356,6 +373,8 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
                 link_status = eth_data.get("LinkStatus") or func_data.get("Status", {}).get("Health") or "Unknown"
 
                 if is_infiniBand_function(func_data, adapter_data):
+                    if ib_found:
+                        continue
                     ib_name = format_ib_nic_name(func_id)
                     if not fallback_ib or link_status.upper() == "UP":
                         fallback_ib = {
@@ -363,10 +382,12 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
                             "ib_nic_link_status": link_status,
                         }
                     if link_status.upper() == "UP":
-                        break
+                        ib_found = True
 
                 elif func_type == "ethernet" or not func_type:
-                    if mac and not info["first_nic_mac"]:
+                    if first_nic_found:
+                        continue
+                    if mac and not fallback_eth:
                         fallback_eth = {
                             "first_nic_name": func_id,
                             "first_nic_mac": normalize_mac(mac),
@@ -376,7 +397,7 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
                         info["first_nic_name"] = func_id
                         info["first_nic_mac"] = normalize_mac(mac)
                         info["first_nic_link_status"] = link_status
-                        break
+                        first_nic_found = True
 
         if not info["first_nic_mac"] and fallback_eth:
             info["first_nic_name"] = fallback_eth["first_nic_name"]
@@ -454,7 +475,7 @@ def main():
             system_endpoint
         )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
         future_to_entry = {executor.submit(process, entry): entry for entry in admin_inventory}
         for future in concurrent.futures.as_completed(future_to_entry):
             entry = future_to_entry[future]
