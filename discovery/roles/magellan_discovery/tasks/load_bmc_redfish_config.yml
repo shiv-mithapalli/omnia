@@ -43,3 +43,5 @@
     bmc_location_aisle_field: "{{ bmc_redfish_config_result.data.location_aisle_field | default('') }}"
     bmc_location_rack_field: "{{ bmc_redfish_config_result.data.location_rack_field | default('') }}"
     bmc_location_slot_field: "{{ bmc_redfish_config_result.data.location_slot_field | default('') }}"
+    bmc_idrac_name_key: "{{ bmc_redfish_config_result.data.idrac_name_key | default('') }}"
+    bmc_idrac_name_format: "{{ bmc_redfish_config_result.data.idrac_name_format | default('') }}"

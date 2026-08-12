@@ -88,6 +88,8 @@ dhcp_disable_value,Disabled
 location_aisle_field,ServerTopology.1.AisleName
 location_rack_field,ServerTopology.1.RackName
 location_slot_field,ServerTopology.1.RackSlot
+idrac_name_key,NIC.1.DNSRacName
+idrac_name_format,{GROUP_NAME}R{RACK}OU{USLOT}C1
 ```
 
 Required keys are validated by the `validate_bmc_redfish_config` module.
