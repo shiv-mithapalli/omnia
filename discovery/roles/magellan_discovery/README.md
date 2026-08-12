@@ -71,7 +71,13 @@ role how to address a given vendor's Redfish implementation. Example (Dell iDRAC
 ```csv
 vendor_profile,dell
 system_endpoint,/redfish/v1/Systems/System.Embedded.1
+managers_collection_endpoint,/redfish/v1/Managers
+systems_collection_endpoint,/redfish/v1/Systems
+manager_endpoint,/redfish/v1/Managers/iDRAC.Embedded.1
 manager_attributes_endpoint,/redfish/v1/Managers/iDRAC.Embedded.1/Attributes
+manager_ethernet_interfaces_endpoint,/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces
+system_network_adapters_endpoint,/redfish/v1/Systems/System.Embedded.1/NetworkAdapters
+system_ethernet_interfaces_endpoint,/redfish/v1/Systems/System.Embedded.1/EthernetInterfaces
 location_endpoint,/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/DellAttributes/System.Embedded.1
 service_tag_field,SKU
 static_ip_address_key,IPv4Static.1.Address
@@ -82,8 +88,6 @@ dhcp_disable_value,Disabled
 location_aisle_field,ServerTopology.1.AisleName
 location_rack_field,ServerTopology.1.RackName
 location_slot_field,ServerTopology.1.RackSlot
-idrac_name_key,iDRAC.NIC.DNSRacName
-idrac_name_format,{GROUP_NAME}R{RACK}OU{USLOT}C1
 ```
 
 Required keys are validated by the `validate_bmc_redfish_config` module.

@@ -235,9 +235,13 @@ def _lookup_attribute(data, key):
 def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet,
                              verify_ssl, timeout, max_retries, service_tag_field="",
                              system_endpoint="", manager_attributes_endpoint="",
+                             manager_endpoint="", managers_collection_endpoint="/redfish/v1/Managers",
+                             manager_ethernet_interfaces_endpoint="",
+                             systems_collection_endpoint="/redfish/v1/Systems",
+                             system_network_adapters_endpoint="",
+                             system_ethernet_interfaces_endpoint="",
                              location_endpoint="", location_aisle_field="",
-                             location_rack_field="", location_slot_field="",
-                             idrac_name_key="", idrac_name_format=""):
+                             location_rack_field="", location_slot_field=""):
     """Collect inventory for a single server from its BMC."""
     bmc_ip = _get_value(admin_server, "BMC_IP")
     if not bmc_ip:
@@ -267,7 +271,8 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
     }
 
     # Resolve the system endpoint. If a system_endpoint is configured, use it
-    # directly; otherwise walk the Systems collection and pick the first member.
+    # directly; otherwise walk the configured Systems collection and pick the
+    # first member.
     if system_endpoint:
         system_path = system_endpoint
         system_resp = redfish_get(session, base_url, system_path,
@@ -276,10 +281,10 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
             raise ValueError(f"Failed to fetch system endpoint {system_path}: HTTP {system_resp.status_code}")
         system_data = system_resp.json()
     else:
-        systems_resp = redfish_get(session, base_url, "/redfish/v1/Systems",
+        systems_resp = redfish_get(session, base_url, systems_collection_endpoint,
                                    auth, verify_ssl, timeout, max_retries)
         if systems_resp.status_code != 200:
-            raise ValueError(f"Failed to fetch Systems collection: HTTP {systems_resp.status_code}")
+            raise ValueError(f"Failed to fetch Systems collection {systems_collection_endpoint}: HTTP {systems_resp.status_code}")
         members = systems_resp.json().get("Members", [])
         system_path = ""
         for member in members:
@@ -306,18 +311,18 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
             )
     info["service_tag"] = csv_service_tag or redfish_service_tag
     info["model"] = system_data.get("Model") or ""
-    info["idrac_hostname"] = system_data.get("Name") or ""
 
-    # Resolve the manager endpoint. Prefer the root derived from the configured
-    # manager_attributes_endpoint; otherwise discover via the Managers collection.
-    manager_path = ""
-    if manager_attributes_endpoint:
+    # Resolve the manager endpoint. Prefer an explicitly configured
+    # manager_endpoint, then derive the root from manager_attributes_endpoint,
+    # then discover via the Managers collection.
+    manager_path = manager_endpoint
+    if not manager_path and manager_attributes_endpoint:
         manager_path = manager_attributes_endpoint.rstrip("/")
         if manager_path.endswith("/Attributes"):
             manager_path = manager_path[: -len("/Attributes")]
 
     if not manager_path:
-        managers_resp = redfish_get(session, base_url, "/redfish/v1/Managers",
+        managers_resp = redfish_get(session, base_url, managers_collection_endpoint,
                                     auth, verify_ssl, timeout, max_retries)
         if managers_resp.status_code == 200:
             managers = managers_resp.json().get("Members", [])
@@ -327,40 +332,25 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
                     manager_path = path
 
     if manager_path:
-        manager_data = redfish_get(session, base_url, manager_path,
-                                   auth, verify_ssl, timeout, max_retries)
-        if manager_data.status_code == 200:
-            manager_json = manager_data.json()
-            info["idrac_hostname"] = manager_json.get("HostName") or info["idrac_hostname"]
-            eth_coll_path = f"{manager_path}/EthernetInterfaces"
-            eth_resp = redfish_get(session, base_url, eth_coll_path,
-                                   auth, verify_ssl, timeout, max_retries)
-            if eth_resp.status_code == 200:
-                for eth_member in eth_resp.json().get("Members", []):
-                    eth_path = eth_member.get("@odata.id", "")
-                    if not eth_path:
-                        continue
-                    eth_data = redfish_get(session, base_url, eth_path,
-                                           auth, verify_ssl, timeout, max_retries).json()
-                    mac = eth_data.get("MACAddress") or eth_data.get("PermanentMACAddress")
-                    if mac:
-                        info["idrac_mac"] = normalize_mac(mac)
-                        info["idrac_link_status"] = eth_data.get("LinkStatus", "Unknown")
-                        break
-
-    # Use manager attributes to resolve the configured iDRAC name key.
-    if manager_attributes_endpoint:
-        attr_resp = redfish_get(session, base_url, manager_attributes_endpoint,
-                                auth, verify_ssl, timeout, max_retries)
-        if attr_resp.status_code == 200:
-            attr_data = attr_resp.json()
-            if idrac_name_key:
-                dns_name = _lookup_attribute(attr_data, idrac_name_key)
-                if dns_name:
-                    info["idrac_hostname"] = str(dns_name)
+        eth_coll_path = manager_ethernet_interfaces_endpoint or f"{manager_path}/EthernetInterfaces"
+        eth_resp = redfish_get(session, base_url, eth_coll_path,
+                               auth, verify_ssl, timeout, max_retries)
+        if eth_resp.status_code == 200:
+            for eth_member in eth_resp.json().get("Members", []):
+                eth_path = eth_member.get("@odata.id", "")
+                if not eth_path:
+                    continue
+                eth_data = redfish_get(session, base_url, eth_path,
+                                       auth, verify_ssl, timeout, max_retries).json()
+                mac = eth_data.get("MACAddress") or eth_data.get("PermanentMACAddress")
+                if mac:
+                    info["idrac_mac"] = normalize_mac(mac)
+                    info["idrac_link_status"] = eth_data.get("LinkStatus", "Unknown")
+                    break
 
     # Network adapters on the host system
-    adapters_resp = redfish_get(session, base_url, f"{system_path}/NetworkAdapters",
+    adapters_path = system_network_adapters_endpoint or f"{system_path}/NetworkAdapters"
+    adapters_resp = redfish_get(session, base_url, adapters_path,
                                 auth, verify_ssl, timeout, max_retries)
     if adapters_resp.status_code == 200:
         adapters = adapters_resp.json().get("Members", [])
@@ -446,7 +436,8 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
 
     # Fallback: try system EthernetInterfaces if NetworkAdapters yielded nothing
     if not info["first_nic_mac"]:
-        eth_if_resp = redfish_get(session, base_url, f"{system_path}/EthernetInterfaces",
+        eth_if_path = system_ethernet_interfaces_endpoint or f"{system_path}/EthernetInterfaces"
+        eth_if_resp = redfish_get(session, base_url, eth_if_path,
                                   auth, verify_ssl, timeout, max_retries)
         if eth_if_resp.status_code == 200:
             for eth_member in eth_if_resp.json().get("Members", []):
@@ -476,13 +467,6 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
             if not info["uslot"] and location_slot_field:
                 info["uslot"] = str(_lookup_attribute(location_data, location_slot_field) or "")
 
-    if not info["idrac_hostname"] and idrac_name_format:
-        info["idrac_hostname"] = idrac_name_format.replace(
-            "{GROUP_NAME}", info["group_name"] or ""
-        ).replace("{ROW}", info["row"] or "").replace(
-            "{RACK}", info["rack"] or ""
-        ).replace("{USLOT}", info["uslot"] or "")
-
     session.close()
     return info
 
@@ -500,13 +484,17 @@ def main():
         "max_retries": {"type": "int", "required": False, "default": 3},
         "service_tag_field": {"type": "str", "required": False, "default": ""},
         "system_endpoint": {"type": "str", "required": False, "default": ""},
+        "systems_collection_endpoint": {"type": "str", "required": False, "default": "/redfish/v1/Systems"},
+        "system_network_adapters_endpoint": {"type": "str", "required": False, "default": ""},
+        "system_ethernet_interfaces_endpoint": {"type": "str", "required": False, "default": ""},
         "manager_attributes_endpoint": {"type": "str", "required": False, "default": ""},
+        "manager_endpoint": {"type": "str", "required": False, "default": ""},
+        "managers_collection_endpoint": {"type": "str", "required": False, "default": "/redfish/v1/Managers"},
+        "manager_ethernet_interfaces_endpoint": {"type": "str", "required": False, "default": ""},
         "location_endpoint": {"type": "str", "required": False, "default": ""},
         "location_aisle_field": {"type": "str", "required": False, "default": ""},
         "location_rack_field": {"type": "str", "required": False, "default": ""},
         "location_slot_field": {"type": "str", "required": False, "default": ""},
-        "idrac_name_key": {"type": "str", "required": False, "default": ""},
-        "idrac_name_format": {"type": "str", "required": False, "default": ""},
     }
 
     module = AnsibleModule(argument_spec=module_args, supports_check_mode=True)
@@ -525,13 +513,17 @@ def main():
     max_retries = module.params["max_retries"]
     service_tag_field = module.params["service_tag_field"]
     system_endpoint = module.params["system_endpoint"]
+    systems_collection_endpoint = module.params["systems_collection_endpoint"]
+    system_network_adapters_endpoint = module.params["system_network_adapters_endpoint"]
+    system_ethernet_interfaces_endpoint = module.params["system_ethernet_interfaces_endpoint"]
     manager_attributes_endpoint = module.params["manager_attributes_endpoint"]
+    manager_endpoint = module.params["manager_endpoint"]
+    managers_collection_endpoint = module.params["managers_collection_endpoint"]
+    manager_ethernet_interfaces_endpoint = module.params["manager_ethernet_interfaces_endpoint"]
     location_endpoint = module.params["location_endpoint"]
     location_aisle_field = module.params["location_aisle_field"]
     location_rack_field = module.params["location_rack_field"]
     location_slot_field = module.params["location_slot_field"]
-    idrac_name_key = module.params["idrac_name_key"]
-    idrac_name_format = module.params["idrac_name_format"]
 
     if module.check_mode:
         module.exit_json(changed=False, servers=[])
@@ -544,8 +536,13 @@ def main():
             entry, bmc_username, bmc_password, ib_subnet,
             verify_ssl, timeout, max_retries, service_tag_field,
             system_endpoint, manager_attributes_endpoint,
+            manager_endpoint, managers_collection_endpoint,
+            manager_ethernet_interfaces_endpoint,
+            systems_collection_endpoint,
+            system_network_adapters_endpoint,
+            system_ethernet_interfaces_endpoint,
             location_endpoint, location_aisle_field, location_rack_field,
-            location_slot_field, idrac_name_key, idrac_name_format
+            location_slot_field
         )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:

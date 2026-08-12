@@ -63,7 +63,13 @@ REQUIRED_KEYS = [
 
 ENDPOINT_KEYS = [
     "system_endpoint",
+    "systems_collection_endpoint",
+    "system_network_adapters_endpoint",
+    "system_ethernet_interfaces_endpoint",
+    "manager_endpoint",
+    "managers_collection_endpoint",
     "manager_attributes_endpoint",
+    "manager_ethernet_interfaces_endpoint",
     "location_endpoint",
 ]
 

@@ -33,13 +33,17 @@
     verify_ssl: "{{ verify_ssl | default(false) }}"
     service_tag_field: "{{ bmc_service_tag_field | default('') }}"
     system_endpoint: "{{ bmc_system_endpoint | default('') }}"
+    systems_collection_endpoint: "{{ bmc_systems_collection_endpoint | default('') }}"
+    system_network_adapters_endpoint: "{{ bmc_system_network_adapters_endpoint | default('') }}"
+    system_ethernet_interfaces_endpoint: "{{ bmc_system_ethernet_interfaces_endpoint | default('') }}"
+    manager_endpoint: "{{ bmc_manager_endpoint | default('') }}"
     manager_attributes_endpoint: "{{ bmc_manager_attributes_endpoint | default('') }}"
+    managers_collection_endpoint: "{{ bmc_managers_collection_endpoint | default('') }}"
+    manager_ethernet_interfaces_endpoint: "{{ bmc_manager_ethernet_interfaces_endpoint | default('') }}"
     location_endpoint: "{{ bmc_location_endpoint | default('') }}"
     location_aisle_field: "{{ bmc_location_aisle_field | default('') }}"
     location_rack_field: "{{ bmc_location_rack_field | default('') }}"
     location_slot_field: "{{ bmc_location_slot_field | default('') }}"
-    idrac_name_key: "{{ bmc_idrac_name_key | default('') }}"
-    idrac_name_format: "{{ bmc_idrac_name_format | default('') }}"
   register: magellan_inventory_result
   no_log: true
 
