@@ -220,9 +220,24 @@ def is_infiniBand_function(func_data, adapter_data):
     return False
 
 
+def _lookup_attribute(data, key):
+    """Return a key from a Redfish attribute payload or its Attributes sub-dict."""
+    if not data or not key:
+        return None
+    if key in data:
+        return data[key]
+    attributes = data.get("Attributes") or data.get("attributes")
+    if attributes and key in attributes:
+        return attributes[key]
+    return None
+
+
 def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet,
                              verify_ssl, timeout, max_retries, service_tag_field="",
-                             system_endpoint=""):
+                             system_endpoint="", manager_attributes_endpoint="",
+                             location_endpoint="", location_aisle_field="",
+                             location_rack_field="", location_slot_field="",
+                             idrac_name_key="", idrac_name_format=""):
     """Collect inventory for a single server from its BMC."""
     bmc_ip = _get_value(admin_server, "BMC_IP")
     if not bmc_ip:
@@ -293,20 +308,30 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
     info["model"] = system_data.get("Model") or ""
     info["idrac_hostname"] = system_data.get("Name") or ""
 
-    # Resolve Managers collection and get the iDRAC management interface
-    managers_resp = redfish_get(session, base_url, "/redfish/v1/Managers",
-                                auth, verify_ssl, timeout, max_retries)
-    if managers_resp.status_code == 200:
-        managers = managers_resp.json().get("Members", [])
-        manager_path = ""
-        for member in managers:
-            path = member.get("@odata.id", "")
-            if path and ("iDRAC" in path or not manager_path):
-                manager_path = path
-        if manager_path:
-            manager_data = redfish_get(session, base_url, manager_path,
-                                       auth, verify_ssl, timeout, max_retries).json()
-            info["idrac_hostname"] = manager_data.get("HostName") or info["idrac_hostname"]
+    # Resolve the manager endpoint. Prefer the root derived from the configured
+    # manager_attributes_endpoint; otherwise discover via the Managers collection.
+    manager_path = ""
+    if manager_attributes_endpoint:
+        manager_path = manager_attributes_endpoint.rstrip("/")
+        if manager_path.endswith("/Attributes"):
+            manager_path = manager_path[: -len("/Attributes")]
+
+    if not manager_path:
+        managers_resp = redfish_get(session, base_url, "/redfish/v1/Managers",
+                                    auth, verify_ssl, timeout, max_retries)
+        if managers_resp.status_code == 200:
+            managers = managers_resp.json().get("Members", [])
+            for member in managers:
+                path = member.get("@odata.id", "")
+                if path and ("iDRAC" in path or not manager_path):
+                    manager_path = path
+
+    if manager_path:
+        manager_data = redfish_get(session, base_url, manager_path,
+                                   auth, verify_ssl, timeout, max_retries)
+        if manager_data.status_code == 200:
+            manager_json = manager_data.json()
+            info["idrac_hostname"] = manager_json.get("HostName") or info["idrac_hostname"]
             eth_coll_path = f"{manager_path}/EthernetInterfaces"
             eth_resp = redfish_get(session, base_url, eth_coll_path,
                                    auth, verify_ssl, timeout, max_retries)
@@ -322,6 +347,17 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
                         info["idrac_mac"] = normalize_mac(mac)
                         info["idrac_link_status"] = eth_data.get("LinkStatus", "Unknown")
                         break
+
+    # Use manager attributes to resolve the configured iDRAC name key.
+    if manager_attributes_endpoint:
+        attr_resp = redfish_get(session, base_url, manager_attributes_endpoint,
+                                auth, verify_ssl, timeout, max_retries)
+        if attr_resp.status_code == 200:
+            attr_data = attr_resp.json()
+            if idrac_name_key:
+                dns_name = _lookup_attribute(attr_data, idrac_name_key)
+                if dns_name:
+                    info["idrac_hostname"] = str(dns_name)
 
     # Network adapters on the host system
     adapters_resp = redfish_get(session, base_url, f"{system_path}/NetworkAdapters",
@@ -426,6 +462,27 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
                     info["first_nic_link_status"] = eth_data.get("LinkStatus", "Unknown")
                     break
 
+    # Optionally enrich location/idrac name from the vendor-specific endpoints
+    # configured in bmc_redfish_config.csv when the admin inventory is missing them.
+    if location_endpoint and (location_aisle_field or location_rack_field or location_slot_field):
+        location_resp = redfish_get(session, base_url, location_endpoint,
+                                    auth, verify_ssl, timeout, max_retries)
+        if location_resp.status_code == 200:
+            location_data = location_resp.json()
+            if not info["row"] and location_aisle_field:
+                info["row"] = str(_lookup_attribute(location_data, location_aisle_field) or "")
+            if not info["rack"] and location_rack_field:
+                info["rack"] = str(_lookup_attribute(location_data, location_rack_field) or "")
+            if not info["uslot"] and location_slot_field:
+                info["uslot"] = str(_lookup_attribute(location_data, location_slot_field) or "")
+
+    if not info["idrac_hostname"] and idrac_name_format:
+        info["idrac_hostname"] = idrac_name_format.replace(
+            "{GROUP_NAME}", info["group_name"] or ""
+        ).replace("{ROW}", info["row"] or "").replace(
+            "{RACK}", info["rack"] or ""
+        ).replace("{USLOT}", info["uslot"] or "")
+
     session.close()
     return info
 
@@ -443,6 +500,13 @@ def main():
         "max_retries": {"type": "int", "required": False, "default": 3},
         "service_tag_field": {"type": "str", "required": False, "default": ""},
         "system_endpoint": {"type": "str", "required": False, "default": ""},
+        "manager_attributes_endpoint": {"type": "str", "required": False, "default": ""},
+        "location_endpoint": {"type": "str", "required": False, "default": ""},
+        "location_aisle_field": {"type": "str", "required": False, "default": ""},
+        "location_rack_field": {"type": "str", "required": False, "default": ""},
+        "location_slot_field": {"type": "str", "required": False, "default": ""},
+        "idrac_name_key": {"type": "str", "required": False, "default": ""},
+        "idrac_name_format": {"type": "str", "required": False, "default": ""},
     }
 
     module = AnsibleModule(argument_spec=module_args, supports_check_mode=True)
@@ -461,6 +525,13 @@ def main():
     max_retries = module.params["max_retries"]
     service_tag_field = module.params["service_tag_field"]
     system_endpoint = module.params["system_endpoint"]
+    manager_attributes_endpoint = module.params["manager_attributes_endpoint"]
+    location_endpoint = module.params["location_endpoint"]
+    location_aisle_field = module.params["location_aisle_field"]
+    location_rack_field = module.params["location_rack_field"]
+    location_slot_field = module.params["location_slot_field"]
+    idrac_name_key = module.params["idrac_name_key"]
+    idrac_name_format = module.params["idrac_name_format"]
 
     if module.check_mode:
         module.exit_json(changed=False, servers=[])
@@ -472,7 +543,9 @@ def main():
         return collect_server_inventory(
             entry, bmc_username, bmc_password, ib_subnet,
             verify_ssl, timeout, max_retries, service_tag_field,
-            system_endpoint
+            system_endpoint, manager_attributes_endpoint,
+            location_endpoint, location_aisle_field, location_rack_field,
+            location_slot_field, idrac_name_key, idrac_name_format
         )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:

@@ -47,6 +47,12 @@ REQUIRED_COLUMNS = [
     "RANGE",
 ]
 
+# CSM xname component limits. The expander validates these up-front so that
+# invalid location data is caught before xnames are generated.
+MAX_ROW = 8999
+MAX_RACK = 2047
+MAX_USLOT = 255
+
 
 def _ip_to_int(ip_str: str) -> int:
     """Convert an IPv4 address string to a 32-bit integer."""
@@ -56,6 +62,36 @@ def _ip_to_int(ip_str: str) -> int:
 def _int_to_ip(ip_int: int) -> str:
     """Convert a 32-bit integer to an IPv4 address string."""
     return str(ipaddress.IPv4Address(ip_int))
+
+
+def _ip_is_reserved_host(ip_int: int, range_start: int, range_end: int) -> bool:
+    """Return True when ip_int is the network or broadcast address of its RANGE.
+
+    When the RANGE is exactly one CIDR-sized block (its size is a power of two
+    and its start is aligned to that size), the first and last addresses are
+    reserved and must not be assigned as a BMC_IP.  For non-CIDR ranges we do
+    not make assumptions about the containing subnet.
+    """
+    range_size = range_end - range_start + 1
+    if range_size > 0 and (range_size & (range_size - 1)) == 0 and (range_start % range_size) == 0:
+        return ip_int == range_start or ip_int == range_end
+    return False
+
+
+def _count_usable_ipv4(start_int: int, end_int: int) -> int:
+    """Count usable host addresses in [start_int, end_int]."""
+    count = 0
+    for ip_int in range(start_int, end_int + 1):
+        if not _ip_is_reserved_host(ip_int, start_int, end_int):
+            count += 1
+    return count
+
+
+def _usable_ipv4_generator(start_int: int, end_int: int):
+    """Yield usable host IPv4 integers in [start_int, end_int]."""
+    for ip_int in range(start_int, end_int + 1):
+        if not _ip_is_reserved_host(ip_int, start_int, end_int):
+            yield ip_int
 
 
 def _is_valid_ipv4(ip_str: str) -> bool:
@@ -71,6 +107,14 @@ def _is_non_negative_int(value: str) -> bool:
     """Return True if the value is a non-negative integer."""
     try:
         return int(value) >= 0
+    except (ValueError, TypeError):
+        return False
+
+
+def _is_valid_range_value(value: str, max_value: int) -> bool:
+    """Return True if the value is a non-negative integer not exceeding max_value."""
+    try:
+        return 0 <= int(value) <= max_value
     except (ValueError, TypeError):
         return False
 
@@ -179,11 +223,15 @@ def parse_csv(csv_path: str) -> List[Dict[str, Any]]:
                     )
                     row_valid = False
                 else:
-                    if not _is_non_negative_int(row_val):
-                        row_errors.append(f"Row {row_num}: ROW must be a non-negative integer")
+                    if not _is_valid_range_value(row_val, MAX_ROW):
+                        row_errors.append(
+                            f"Row {row_num}: ROW must be an integer between 0 and {MAX_ROW}, got {row_val}"
+                        )
                         row_valid = False
-                    if not _is_non_negative_int(rack_val):
-                        row_errors.append(f"Row {row_num}: RACK must be a non-negative integer")
+                    if not _is_valid_range_value(rack_val, MAX_RACK):
+                        row_errors.append(
+                            f"Row {row_num}: RACK must be an integer between 0 and {MAX_RACK}, got {rack_val}"
+                        )
                         row_valid = False
             if uslot_val:
                 if not (row_val and rack_val):
@@ -191,9 +239,9 @@ def parse_csv(csv_path: str) -> List[Dict[str, Any]]:
                         f"Row {row_num}: USLOT provided without ROW and RACK"
                     )
                     row_valid = False
-                elif not _is_non_negative_int(uslot_val):
+                elif not _is_valid_range_value(uslot_val, MAX_USLOT):
                     row_errors.append(
-                        f"Row {row_num}: USLOT must be empty or a non-negative integer"
+                        f"Row {row_num}: USLOT must be an integer between 0 and {MAX_USLOT}, got {uslot_val}"
                     )
                     row_valid = False
 
@@ -248,6 +296,12 @@ def assign_uslots(rows: List[Dict[str, Any]]) -> None:
         except ValueError:
             errors.append(f"Row {row_num}: ROW and RACK must be non-negative integers")
             continue
+        if not (0 <= row_int <= MAX_ROW):
+            errors.append(f"Row {row_num}: ROW must be an integer between 0 and {MAX_ROW}, got {row_val}")
+            continue
+        if not (0 <= rack_int <= MAX_RACK):
+            errors.append(f"Row {row_num}: RACK must be an integer between 0 and {MAX_RACK}, got {rack_val}")
+            continue
         key = (row_int, rack_int)
         groups.setdefault(key, []).append(row)
 
@@ -258,9 +312,9 @@ def assign_uslots(rows: List[Dict[str, Any]]) -> None:
         for row in group_rows:
             s = row.get("USLOT", "").strip()
             if s:
-                if not _is_non_negative_int(s):
+                if not _is_valid_range_value(s, MAX_USLOT):
                     errors.append(
-                        f"Row {row['_row_num']}: USLOT must be empty or a non-negative integer"
+                        f"Row {row['_row_num']}: USLOT must be an integer between 0 and {MAX_USLOT}, got {s}"
                     )
                     continue
                 slot = int(s)
@@ -288,6 +342,12 @@ def assign_uslots(rows: List[Dict[str, Any]]) -> None:
             else:
                 while next_slot in assigned or provided_slots.get(next_slot, 0) > 0:
                     next_slot += 1
+                if next_slot > MAX_USLOT:
+                    errors.append(
+                        f"Row {row_num}: cannot auto-assign USLOT for (ROW, RACK) {key}; "
+                        f"no free slot between 0 and {MAX_USLOT}"
+                    )
+                    continue
                 uslot_int = next_slot
                 assigned.add(uslot_int)
                 next_slot += 1
@@ -340,11 +400,11 @@ def check_subnet_lengths(rows: List[Dict[str, Any]]) -> List[str]:
             )
             continue
 
-        available = end_int - start_int + 1
+        available = _count_usable_ipv4(start_int, end_int)
         if len(group_rows) > available:
             errors.append(
                 f"Group {group_name}: {len(group_rows)} entries but RANGE {range_val} "
-                f"only provides {available} IPs"
+                f"only provides {available} usable host IPs"
             )
             continue
 
@@ -401,9 +461,10 @@ def allocate_ips(rows: List[Dict[str, Any]]) -> None:
             )
             continue
 
-        if len(group_rows) > end_int - start_int + 1:
+        available = _count_usable_ipv4(start_int, end_int)
+        if len(group_rows) > available:
             errors.append(
-                f"Group {group_name}: not enough IPs in RANGE {range_val}"
+                f"Group {group_name}: not enough usable host IPs in RANGE {range_val}"
             )
             continue
 
@@ -420,8 +481,9 @@ def allocate_ips(rows: List[Dict[str, Any]]) -> None:
         else:
             sorted_rows = sorted(group_rows, key=lambda r: r["_row_num"])
 
-        for idx, row in enumerate(sorted_rows):
-            row["BMC_IP"] = _int_to_ip(start_int + idx)
+        ip_gen = _usable_ipv4_generator(start_int, end_int)
+        for row in sorted_rows:
+            row["BMC_IP"] = _int_to_ip(next(ip_gen))
 
     if errors:
         raise ValueError("\n".join(errors))
@@ -501,7 +563,7 @@ def save_complete_inventory_csv(path: str, complete: List[Dict[str, Any]]) -> No
         raise ValueError("No complete rows to write")
     fieldnames = [k for k in complete[0].keys() if not k.startswith("_")]
     with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         writer.writerows(complete)
 

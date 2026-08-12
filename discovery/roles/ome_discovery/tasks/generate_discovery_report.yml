@@ -35,14 +35,32 @@
     name: build_stream_config_data
   failed_when: false
 
+- name: Set xnames mapping summary
+  ansible.builtin.set_fact:
+    xnames_mapping_message: >-
+      {{
+        'BMC xnames mapping file generated: ' ~ xnames_mapping_file
+        if (xnames_result | default({'xnames_count': 0})).xnames_count | default(0) | int > 0
+        else 'BMC xnames mapping skipped: no location data present'
+      }}
+    _xnames_copy_instruction: >-
+      {{
+        'cp ' ~ xnames_mapping_file ~ ' ' ~ (xnames_mapping_file | dirname) ~ '/xnames_mapping_file.csv'
+        if (xnames_result | default({'xnames_count': 0})).xnames_count | default(0) | int > 0
+        else ''
+      }}
+
 - name: Display discovery completion message (without BuildStream)
   when: not (build_stream_config_data.enable_build_stream | default(false) | bool)
   ansible.builtin.debug:
-    msg:
+    msg: "{{ _ome_report_msg | select | list }}"
+  vars:
+    _ome_report_msg:
       - "============================================================"
       - "OME Discovery Complete"
       - "============================================================"
       - "BMC PXE mapping file generated: {{ pxe_mapping_output_file }}"
+      - "{{ xnames_mapping_message }}"
       - "BMC discovery report generated: {{ discovery_report_output_file }}"
       - "  (Lists link status of BMC, Ethernet, and InfiniBand NICs for each server)"
       - "Total servers discovered: {{ discovered_servers | length }}"
@@ -56,7 +74,11 @@
       - ""
       - "3. Update HOSTNAME, FUNCTIONAL_GROUP_NAME, GROUP_NAME as needed."
       - ""
-      - "4. If fresh installation of Omnia, Run:"
+      - "4. Copy the reviewed files to the non-timestamped names used by provision:"
+      - "     cp {{ pxe_mapping_output_file }} {{ pxe_mapping_output_file | dirname }}/pxe_mapping_file.csv"
+      - "     {{ _xnames_copy_instruction }}"
+      - ""
+      - "5. If fresh installation of Omnia, Run:"
       - "     ansible-playbook prepare_oim/prepare_oim.yml"
       - ""
       - "   If Slurm add node scenario, Run:"
@@ -66,11 +88,14 @@
 - name: Display discovery completion message (with BuildStream)
   when: build_stream_config_data.enable_build_stream | default(false) | bool
   ansible.builtin.debug:
-    msg:
+    msg: "{{ _ome_report_msg | select | list }}"
+  vars:
+    _ome_report_msg:
       - "============================================================"
       - "OME Discovery Complete"
       - "============================================================"
       - "BMC PXE mapping file generated: {{ pxe_mapping_output_file }}"
+      - "{{ xnames_mapping_message }}"
       - "BMC discovery report generated: {{ discovery_report_output_file }}"
       - "  (Lists link status of BMC, Ethernet, and InfiniBand NICs for each server)"
       - "Total servers discovered: {{ discovered_servers | length }}"
@@ -84,10 +109,14 @@
       - ""
       - "3. Update HOSTNAME, FUNCTIONAL_GROUP_NAME, GROUP_NAME as needed."
       - ""
-      - "4. If GitLab server is not yet up, copy the generated file to"
+      - "4. Copy the reviewed files to the non-timestamped names used by provision:"
+      - "     cp {{ pxe_mapping_output_file }} {{ pxe_mapping_output_file | dirname }}/pxe_mapping_file.csv"
+      - "     {{ _xnames_copy_instruction }}"
+      - ""
+      - "5. If GitLab server is not yet up, copy the generated file to"
       - "     /opt/omnia/input/project_default/pxe_mapping_file.csv in the omnia_core container"
       - ""
-      - "5. If the GitLab server is up and running, copy the file to"
+      - "6. If the GitLab server is up and running, copy the file to"
       - "     input/pxe_mapping_file.csv in the GitLab project and commit the changes"
       - "     after building the images using the build pipeline. Committing the PXE mapping"
       - "     file will automatically trigger the deploy pipeline and deploy the images on"

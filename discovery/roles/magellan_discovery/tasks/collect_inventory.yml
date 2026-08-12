@@ -30,9 +30,16 @@
     default_functional_group: "{{ default_functional_group }}"
     default_group_name: "{{ default_group_name }}"
     ib_subnet: "{{ ib_subnet }}"
-    verify_ssl: false
+    verify_ssl: "{{ verify_ssl | default(false) }}"
     service_tag_field: "{{ bmc_service_tag_field | default('') }}"
     system_endpoint: "{{ bmc_system_endpoint | default('') }}"
+    manager_attributes_endpoint: "{{ bmc_manager_attributes_endpoint | default('') }}"
+    location_endpoint: "{{ bmc_location_endpoint | default('') }}"
+    location_aisle_field: "{{ bmc_location_aisle_field | default('') }}"
+    location_rack_field: "{{ bmc_location_rack_field | default('') }}"
+    location_slot_field: "{{ bmc_location_slot_field | default('') }}"
+    idrac_name_key: "{{ bmc_idrac_name_key | default('') }}"
+    idrac_name_format: "{{ bmc_idrac_name_format | default('') }}"
   register: magellan_inventory_result
   no_log: true
 

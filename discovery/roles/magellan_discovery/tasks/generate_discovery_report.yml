@@ -38,9 +38,20 @@
         else 'BMC xnames mapping skipped: no location data present'
       }}
 
+- name: Set conditional xnames copy instruction
+  ansible.builtin.set_fact:
+    _xnames_copy_instruction: >-
+      {{
+        'cp ' ~ xnames_mapping_file ~ ' ' ~ (xnames_mapping_file | dirname) ~ '/xnames_mapping_file.csv'
+        if (xnames_result | default({'xnames_count': 0})).xnames_count | default(0) | int > 0
+        else ''
+      }}
+
 - name: Display Magellan discovery completion message
   ansible.builtin.debug:
-    msg:
+    msg: "{{ _discovery_report_msg | select | list }}"
+  vars:
+    _discovery_report_msg:
       - "============================================================"
       - "Magellan Discovery Complete"
       - "============================================================"
@@ -61,7 +72,7 @@
       - ""
       - "4. Copy the reviewed files to the non-timestamped names used by provision:"
       - "     cp {{ pxe_mapping_output_file }} {{ pxe_mapping_output_file | dirname }}/pxe_mapping_file.csv"
-      - "     cp {{ xnames_mapping_file }} {{ xnames_mapping_file | dirname }}/xnames_mapping_file.csv"
+      - "     {{ _xnames_copy_instruction }}"
       - ""
       - "5. Update the following parameter in provision_config.yml:"
       - "     pxe_mapping_file_path: {{ pxe_mapping_output_file | dirname }}/pxe_mapping_file.csv"

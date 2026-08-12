@@ -33,3 +33,8 @@ hostname_start_number: 1
 
 # Hostname padding (e.g., 5 digits = nid00001)
 hostname_padding: 5
+
+# Verify SSL certificates when calling iDRAC Redfish endpoints.
+# Set to true when the iDRAC has a trusted certificate; override in your
+# inventory or extra vars if required.
+verify_ssl: false
