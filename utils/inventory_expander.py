@@ -216,30 +216,24 @@ def parse_csv(csv_path: str) -> List[Dict[str, Any]]:
             row_val = row.get("ROW", "")
             rack_val = row.get("RACK", "")
             uslot_val = row.get("USLOT", "")
-            if row_val or rack_val:
-                if not row_val or not rack_val:
+            if not row_val or not rack_val:
+                row_errors.append(
+                    f"Row {row_num}: ROW and RACK are required because location columns are present"
+                )
+                row_valid = False
+            else:
+                if not _is_valid_range_value(row_val, MAX_ROW):
                     row_errors.append(
-                        f"Row {row_num}: ROW and RACK must both be provided for correct expansion"
+                        f"Row {row_num}: ROW must be an integer between 0 and {MAX_ROW}, got {row_val}"
                     )
                     row_valid = False
-                else:
-                    if not _is_valid_range_value(row_val, MAX_ROW):
-                        row_errors.append(
-                            f"Row {row_num}: ROW must be an integer between 0 and {MAX_ROW}, got {row_val}"
-                        )
-                        row_valid = False
-                    if not _is_valid_range_value(rack_val, MAX_RACK):
-                        row_errors.append(
-                            f"Row {row_num}: RACK must be an integer between 0 and {MAX_RACK}, got {rack_val}"
-                        )
-                        row_valid = False
-            if uslot_val:
-                if not (row_val and rack_val):
+                if not _is_valid_range_value(rack_val, MAX_RACK):
                     row_errors.append(
-                        f"Row {row_num}: USLOT provided without ROW and RACK"
+                        f"Row {row_num}: RACK must be an integer between 0 and {MAX_RACK}, got {rack_val}"
                     )
                     row_valid = False
-                elif not _is_valid_range_value(uslot_val, MAX_USLOT):
+            if uslot_val and row_valid:
+                if not _is_valid_range_value(uslot_val, MAX_USLOT):
                     row_errors.append(
                         f"Row {row_num}: USLOT must be an integer between 0 and {MAX_USLOT}, got {uslot_val}"
                     )

@@ -220,18 +220,6 @@ def is_infiniBand_function(func_data, adapter_data):
     return False
 
 
-def _lookup_attribute(data, key):
-    """Return a key from a Redfish attribute payload or its Attributes sub-dict."""
-    if not data or not key:
-        return None
-    if key in data:
-        return data[key]
-    attributes = data.get("Attributes") or data.get("attributes")
-    if attributes and key in attributes:
-        return attributes[key]
-    return None
-
-
 def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet,
                              verify_ssl, timeout, max_retries, service_tag_field="",
                              system_endpoint="", manager_attributes_endpoint="",
@@ -239,9 +227,7 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
                              manager_ethernet_interfaces_endpoint="",
                              systems_collection_endpoint="/redfish/v1/Systems",
                              system_network_adapters_endpoint="",
-                             system_ethernet_interfaces_endpoint="",
-                             location_endpoint="", location_aisle_field="",
-                             location_rack_field="", location_slot_field=""):
+                             system_ethernet_interfaces_endpoint=""):
     """Collect inventory for a single server from its BMC."""
     bmc_ip = _get_value(admin_server, "BMC_IP")
     if not bmc_ip:
@@ -453,19 +439,9 @@ def collect_server_inventory(admin_server, bmc_username, bmc_password, ib_subnet
                     info["first_nic_link_status"] = eth_data.get("LinkStatus", "Unknown")
                     break
 
-    # Optionally enrich location/idrac name from the vendor-specific endpoints
-    # configured in bmc_redfish_config.csv when the admin inventory is missing them.
-    if location_endpoint and (location_aisle_field or location_rack_field or location_slot_field):
-        location_resp = redfish_get(session, base_url, location_endpoint,
-                                    auth, verify_ssl, timeout, max_retries)
-        if location_resp.status_code == 200:
-            location_data = location_resp.json()
-            if not info["row"] and location_aisle_field:
-                info["row"] = str(_lookup_attribute(location_data, location_aisle_field) or "")
-            if not info["rack"] and location_rack_field:
-                info["rack"] = str(_lookup_attribute(location_data, location_rack_field) or "")
-            if not info["uslot"] and location_slot_field:
-                info["uslot"] = str(_lookup_attribute(location_data, location_slot_field) or "")
+    # Location data (row, rack, uslot) is intentionally not fetched from the BMC.
+    # It must be supplied in the admin inventory; xnames mapping generation is
+    # skipped downstream when location data is missing for any server.
 
     session.close()
     return info
@@ -491,10 +467,6 @@ def main():
         "manager_endpoint": {"type": "str", "required": False, "default": ""},
         "managers_collection_endpoint": {"type": "str", "required": False, "default": "/redfish/v1/Managers"},
         "manager_ethernet_interfaces_endpoint": {"type": "str", "required": False, "default": ""},
-        "location_endpoint": {"type": "str", "required": False, "default": ""},
-        "location_aisle_field": {"type": "str", "required": False, "default": ""},
-        "location_rack_field": {"type": "str", "required": False, "default": ""},
-        "location_slot_field": {"type": "str", "required": False, "default": ""},
     }
 
     module = AnsibleModule(argument_spec=module_args, supports_check_mode=True)
@@ -520,10 +492,6 @@ def main():
     manager_endpoint = module.params["manager_endpoint"]
     managers_collection_endpoint = module.params["managers_collection_endpoint"]
     manager_ethernet_interfaces_endpoint = module.params["manager_ethernet_interfaces_endpoint"]
-    location_endpoint = module.params["location_endpoint"]
-    location_aisle_field = module.params["location_aisle_field"]
-    location_rack_field = module.params["location_rack_field"]
-    location_slot_field = module.params["location_slot_field"]
 
     if module.check_mode:
         module.exit_json(changed=False, servers=[])
@@ -540,9 +508,7 @@ def main():
             manager_ethernet_interfaces_endpoint,
             systems_collection_endpoint,
             system_network_adapters_endpoint,
-            system_ethernet_interfaces_endpoint,
-            location_endpoint, location_aisle_field, location_rack_field,
-            location_slot_field
+            system_ethernet_interfaces_endpoint
         )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
